@@ -1,4 +1,4 @@
-# Agenda WA 2.0
+# Agenda WA 1.7
 
 Agenda inteligente para Android: recordatorios con alarma, WhatsApp programado, notas inteligentes, clientes y finanzas, copias de seguridad y **Mis Gastos** (control de gastos e ingresos).
 

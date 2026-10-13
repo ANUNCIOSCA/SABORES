@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "**" ]
   workflow_dispatch:
 
 jobs:
@@ -39,9 +39,9 @@ jobs:
         run: gradle :app:assembleRelease --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk AgendaWA-v2.0.0.apk
+        run: cp app/build/outputs/apk/release/app-release.apk AgendaWA-v1.7.0.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AgendaWA-v2.0.0
-          path: AgendaWA-v2.0.0.apk
+          name: AgendaWA-v1.7.0
+          path: AgendaWA-v1.7.0.apk

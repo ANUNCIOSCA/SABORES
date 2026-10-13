@@ -1,0 +1,47 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.AGENDAWA_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/agendawa.jks"
+            echo "AGENDAWA_KEYSTORE=$RUNNER_TEMP/agendawa.jks" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build release APK
+        env:
+          AGENDAWA_KEYSTORE_PASSWORD: ${{ secrets.AGENDAWA_KEYSTORE_PASSWORD }}
+          AGENDAWA_KEY_ALIAS: ${{ secrets.AGENDAWA_KEY_ALIAS }}
+          AGENDAWA_KEY_PASSWORD: ${{ secrets.AGENDAWA_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk AgendaWA-v2.0.0.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgendaWA-v2.0.0
+          path: AgendaWA-v2.0.0.apk

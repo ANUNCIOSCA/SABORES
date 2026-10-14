@@ -364,6 +364,17 @@
             max-width: 100%;
             height: min(78vh, 760px);
         }
+        /* Ampliada: deja de quedarse fija para poder bajar a los campos; tocarla la vuelve a su tamaño */
+        .preview-wrap.zoomed { position: relative; }
+        .preview-wrap.zoomed #previewCanvas { cursor: zoom-out; }
+        /* Mientras se escribe: vista previa pequeña para que el teclado y el campo quepan */
+        .preview-wrap.editing #previewCanvas { height: min(20vh, 170px); }
+        .red-tools { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+        .red-tools button {
+            flex: 1 1 140px; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer;
+            border: 2px solid #d61f2c; background: #fff; color: #d61f2c;
+        }
+        .red-tools button.solid { background: #d61f2c; color: #fff; }
         .form-group input[type="text"],
         .form-group textarea { font-size: 16px; }
 
@@ -484,7 +495,11 @@
                 <label for="subtitleInput">✍️ Subtítulo</label>
                 <textarea id="subtitleInput" placeholder="Descripción breve... Escribe **la palabra clave** para resaltarla en rojo" maxlength="220"></textarea>
                 <div class="counter" id="subtitleCounter">0/220</div>
-                <div class="counter">🔴 Envuelve una palabra o frase en **dobles asteriscos** y sale resaltada en rojo dentro del subtítulo.</div>
+                <div class="red-tools">
+                    <button type="button" class="solid" id="redOnBtn">Poner en rojo lo seleccionado</button>
+                    <button type="button" id="redOffBtn">Quitar todo el rojo</button>
+                </div>
+                <div class="counter">🔴 Selecciona con el dedo las palabras del subtítulo y toca "Poner en rojo". También puedes escribirlas entre **dobles asteriscos**.</div>
                 <div class="counter">💡 Presiona Enter donde quieras que el texto baje de línea (máx. 4 líneas). Si no pones Enter, se acomoda solo.</div>
             </div>
 
@@ -1401,12 +1416,66 @@
             if (hasVideo) document.getElementById('videoBtn').classList.add('visible');
 
             var wrap = document.getElementById('previewWrap');
-            var zoomed = wrap.classList.toggle('zoomed');
-            this.textContent = zoomed ? '🔎 Ver tamaño normal' : '🔍 Guardar y ver de cerca';
-            this.classList.toggle('active', zoomed);
+            var zoomed = !wrap.classList.contains('zoomed');
+            setZoom(zoomed);
             if (zoomed) {
                 wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                showMsg('Toca la imagen para volver al tamaño normal y seguir editando.', 'ok');
             }
+        });
+
+        function setZoom(on) {
+            var wrap = document.getElementById('previewWrap');
+            var btn = document.getElementById('zoomBtn');
+            wrap.classList.toggle('zoomed', on);
+            btn.textContent = on ? '🔎 Ver tamaño normal' : '🔍 Guardar y ver de cerca';
+            btn.classList.toggle('active', on);
+        }
+        canvas.addEventListener('click', function() {
+            if (document.getElementById('previewWrap').classList.contains('zoomed')) setZoom(false);
+        });
+
+        // Mientras se escribe en cualquier campo, la vista previa se achica y deja de estar ampliada
+        document.addEventListener('focusin', function(e) {
+            var t = e.target;
+            if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && t.type === 'text'))) {
+                setZoom(false);
+                document.getElementById('previewWrap').classList.add('editing');
+                setTimeout(function() { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 250);
+            }
+        });
+        document.addEventListener('focusout', function() {
+            setTimeout(function() {
+                var a = document.activeElement;
+                if (!a || !(a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.type === 'text'))) {
+                    document.getElementById('previewWrap').classList.remove('editing');
+                }
+            }, 150);
+        });
+
+        // Lo que se escribe en título, subtítulo y etiqueta se ve al instante en la vista previa
+        ['titleInput', 'subtitleInput'].forEach(function(id) {
+            document.getElementById(id).addEventListener('input', function() { if (generated) render(); });
+        });
+
+        // Elegir qué palabras del subtítulo van en rojo
+        var subtitleBox = document.getElementById('subtitleInput');
+        function keepFocus(e) { e.preventDefault(); }
+        document.getElementById('redOnBtn').addEventListener('mousedown', keepFocus);
+        document.getElementById('redOnBtn').addEventListener('touchstart', keepFocus, { passive: false });
+        document.getElementById('redOnBtn').addEventListener('click', function() {
+            var a = subtitleBox.selectionStart, b = subtitleBox.selectionEnd, v = subtitleBox.value;
+            if (a === b) { showMsg('⚠️ Primero selecciona con el dedo las palabras del subtítulo que quieres en rojo', 'error'); return; }
+            var picked = v.slice(a, b).replace(/\*\*/g, '').trim();
+            var before = v.slice(0, a), after = v.slice(b);
+            subtitleBox.value = (before + '**' + picked + '**' + after).slice(0, 220);
+            document.getElementById('subtitleCounter').textContent = subtitleBox.value.length + '/220';
+            if (generated) render();
+        });
+        document.getElementById('redOffBtn').addEventListener('click', function() {
+            subtitleBox.value = subtitleBox.value.replace(/\*\*/g, '');
+            document.getElementById('subtitleCounter').textContent = subtitleBox.value.length + '/220';
+            if (generated) render();
         });
 
         // Botones de tamaño del subtítulo (Full / Medio Full / Medio): fijos, como antes

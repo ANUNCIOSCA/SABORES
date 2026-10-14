@@ -36,6 +36,8 @@ object VoiceParser {
         val night = text.contains("de la noche") || text.contains("por la noche")
         val morning = text.contains("de la mañana") || text.contains("por la mañana")
         if ((afternoon || night) && hour in 1..11) hour += 12
+        // "a las 3" sin decir de la mañana: en una agenda casi siempre es de la tarde
+        else if (!morning && hour in 1..6) hour += 12
         if (morning && hour == 12) hour = 0
         if (hour !in 0..23 || minute !in 0..59) return null
         return LocalTime.of(hour, minute)

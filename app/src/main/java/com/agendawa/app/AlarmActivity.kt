@@ -80,6 +80,11 @@ class AlarmActivity : ComponentActivity() {
                             WhatsApp.open(this, task.phone, task.message.ifBlank { task.title })
                             finish()
                         },
+                        onCall = {
+                            AlarmActions.stopAndComplete(this, task.id)
+                            PhoneCall.open(this, task.phone)
+                            finish()
+                        },
                     )
                 }
             }
@@ -101,6 +106,7 @@ private fun AlarmScreen(
     onSnooze: () -> Unit,
     onDelete: () -> Unit,
     onWhatsApp: () -> Unit,
+    onCall: () -> Unit,
 ) {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -148,6 +154,13 @@ private fun AlarmScreen(
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AgendaGreen, contentColor = Color.White),
                     ) { Text("Abrir WhatsApp") }
+                }
+                if (PhoneCall.isCall(task)) {
+                    Button(
+                        onClick = onCall,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AgendaGreen, contentColor = Color.White),
+                    ) { Text("Llamar ahora") }
                 }
                 FilledTonalButton(onClick = onSnooze, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Recordarme en 5 min") }
                 OutlinedButton(

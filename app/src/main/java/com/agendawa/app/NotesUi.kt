@@ -2,6 +2,11 @@
 
 package com.agendawa.app
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.CircularProgressIndicator
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -206,13 +211,16 @@ fun SmartNoteEditorDialog(request: NoteEditorRequest, onDismiss: () -> Unit, onS
     val existing = request.note
     var title by remember { mutableStateOf(existing?.title ?: request.prefillTitle) }
     var content by remember { mutableStateOf(existing?.content ?: request.prefillText) }
-    var type by remember { mutableStateOf(existing?.type ?: SmartNoteType.GENERAL) }
+    var type by remember { mutableStateOf(existing?.type ?: request.prefillType ?: SmartNoteType.GENERAL) }
     var personName by remember { mutableStateOf(existing?.personName ?: "") }
     var personPhone by remember { mutableStateOf(existing?.personPhone ?: "") }
     var project by remember { mutableStateOf(existing?.project ?: "") }
     var tags by remember { mutableStateOf(existing?.tags ?: "") }
     var pinned by remember { mutableStateOf(existing?.pinned ?: false) }
-    var autoType by remember { mutableStateOf(existing == null) }
+    var autoType by remember { mutableStateOf(existing == null && request.prefillType == null) }
+    val aiEnabled = remember { AiSettings.isEnabled(context) }
+    var polishing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
 
     val contactLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -259,7 +267,29 @@ fun SmartNoteEditorDialog(request: NoteEditorRequest, onDismiss: () -> Unit, onS
                         Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Organizar")
                     }
                 }
-                Text("Agenda WA puede clasificarla y sugerir etiquetas.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (aiEnabled) {
+                    Button(
+                        onClick = {
+                            polishing = true
+                            scope.launch {
+                                runCatching { withContext(Dispatchers.IO) { AiAssistant.polishNote(context, content) } }
+                                    .onSuccess { content = it.take(25000); organize() }
+                                    .onFailure { toast(context, it.message ?: "No se pudo redactar") }
+                                polishing = false
+                            }
+                        },
+                        enabled = content.isNotBlank() && !polishing,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (polishing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        else { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Redactar y ordenar con IA") }
+                    }
+                }
+                Text(
+                    if (aiEnabled) "La IA ordena tu idea; \"Organizar\" la clasifica y le pone etiquetas."
+                    else "Agenda WA puede clasificarla y sugerir etiquetas. Activa Gemini en Configuración para que también la redacte.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 OutlinedTextField(
                     value = title, onValueChange = { title = it.take(120) },
                     label = { Text("Título") }, placeholder = { Text("Ej. Campaña para el próximo sencillo") },

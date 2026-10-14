@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BusinessCenter
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChevronLeft
@@ -52,6 +53,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +68,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,6 +84,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import java.util.Calendar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val TIME_PATTERN = "h:mm a"
 
@@ -568,11 +574,14 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
 
     var title by remember { mutableStateOf(existing?.title ?: draft?.title ?: "") }
     var message by remember { mutableStateOf(existing?.message ?: draft?.message ?: "") }
-    var phone by remember { mutableStateOf(existing?.phone ?: "") }
+    var phone by remember { mutableStateOf(existing?.phone ?: draft?.phone ?: "") }
     var isWhatsApp by remember { mutableStateOf(existing?.isWhatsApp ?: draft?.isWhatsApp ?: request.whatsApp) }
     var dateTime by remember { mutableLongStateOf(existing?.dateTimeMillis ?: draft?.dateTimeMillis ?: defaultTime) }
-    var contactName by remember { mutableStateOf<String?>(null) }
+    var contactName by remember { mutableStateOf(draft?.contactName) }
     var error by remember { mutableStateOf<String?>(null) }
+    val aiEnabled = remember { AiSettings.isEnabled(context) }
+    var polishing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     val contactLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -581,6 +590,7 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                 phone = contact.phoneNumber
                 contactName = contact.displayName
                 if (title.isBlank() || title.startsWith("Enviar WhatsApp")) title = "Enviar WhatsApp a ${contact.displayName}"
+                else if (!isWhatsApp && (title.startsWith("Llamar"))) title = "Llamar a ${contact.displayName}"
             } else toast(context, "No se pudo leer el número del contacto seleccionado.")
         }
     }
@@ -622,11 +632,11 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                     modifier = Modifier.fillMaxWidth(),
                     isError = error != null && title.isBlank(),
                 )
-                if (isWhatsApp) {
+                run {
                     OutlinedTextField(
                         value = phone,
                         onValueChange = { phone = it.take(25); contactName = null },
-                        label = { Text("Número con código de país (opcional)") },
+                        label = { Text(if (isWhatsApp) "Número con código de país (opcional)" else "Teléfono para llamar (opcional)") },
                         placeholder = { Text("Ej. +58 412 123 4567") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -652,6 +662,25 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                     Icon(Icons.Rounded.Mic, null)
                     Spacer(Modifier.width(6.dp))
                     Text("Dictar y agregar texto")
+                }
+                if (isWhatsApp && aiEnabled) {
+                    OutlinedButton(
+                        enabled = message.isNotBlank() && !polishing,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            polishing = true
+                            scope.launch {
+                                val person = contactName ?: title.substringAfter("Enviar WhatsApp a ", "")
+                                runCatching { withContext(Dispatchers.IO) { AiAssistant.polishWhatsApp(context, message, person) } }
+                                    .onSuccess { message = it }
+                                    .onFailure { toast(context, it.message ?: "No se pudo redactar") }
+                                polishing = false
+                            }
+                        },
+                    ) {
+                        if (polishing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(6.dp)); Text("Redactar mensaje con IA") }
+                    }
                 }
                 Text("Fecha y hora", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -691,7 +720,7 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                             id = existing?.id ?: 0L,
                             title = finalTitle,
                             message = message.trim(),
-                            phone = if (isWhatsApp) phone.trim() else "",
+                            phone = phone.trim(),
                             dateTimeMillis = dateTime,
                             isWhatsApp = isWhatsApp,
                             completed = if (existing != null && dateTime > System.currentTimeMillis()) false else (existing?.completed ?: false),

@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -45,6 +44,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -88,29 +88,53 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     companion object {
         const val EXTRA_OPEN_SECTION = "open_section"
+        /** Si la app estuvo en segundo plano más de esto, vuelve a pedir la huella. */
+        private const val RELOCK_AFTER_MS = 60_000L
     }
 
     private val sharedContent = mutableStateOf<SharedContent?>(null)
     private val openSection = mutableStateOf<String?>(null)
     private val focusTaskId = mutableStateOf<Long?>(null)
+    private val locked = mutableStateOf(false)
+    private var backgroundSince = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         NotificationHelper.createChannels(this)
         handleIntent(intent)
+        locked.value = AppLock.isEnabled(this)
         setContent {
-            AgendaWaApp(
-                sharedContent = sharedContent,
-                openSection = openSection,
-                focusTaskId = focusTaskId,
-            )
+            Box(Modifier.fillMaxSize()) {
+                AgendaWaApp(
+                    sharedContent = sharedContent,
+                    openSection = openSection,
+                    focusTaskId = focusTaskId,
+                )
+                if (locked.value) AgendaWaTheme { LockScreen(onUnlock = { locked.value = false }) }
+            }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (backgroundSince > 0 && AppLock.isEnabled(this) &&
+            System.currentTimeMillis() - backgroundSince > RELOCK_AFTER_MS
+        ) locked.value = true
+        backgroundSince = 0L
+    }
+
+    override fun onStop() {
+        super.onStop()
+        backgroundSince = System.currentTimeMillis()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -152,6 +176,7 @@ data class NoteEditorRequest(
     val note: SmartNote? = null,
     val prefillTitle: String = "",
     val prefillText: String = "",
+    val prefillType: SmartNoteType? = null,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -178,6 +203,10 @@ fun AgendaWaApp(
     var showBackup by remember { mutableStateOf(false) }
     var showProfile by remember { mutableStateOf(false) }
     var showAlarmSettings by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var thinking by remember { mutableStateOf<String?>(null) }
+    var contactChoice by remember { mutableStateOf<Pair<VoiceIntent, List<SelectedPhoneContact>>?>(null) }
+    var waitingContactsPermission by remember { mutableStateOf<VoiceIntent?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var showWelcome by remember {
         mutableStateOf(context.getSharedPreferences("agenda_wa_profile", Context.MODE_PRIVATE).getBoolean("welcome_pending", true) && state.profileName.isBlank())
@@ -213,8 +242,110 @@ fun AgendaWaApp(
         focusTaskId.value = null
     }
 
-    val startVoiceReminder = rememberSpeechInput("Dime todo lo que quieres recordar") { text ->
-        taskEditor = TaskEditorRequest(draft = VoiceParser.parse(text))
+    // ------------------------------------------------- asistente de voz
+    // Ideas y notas se guardan solas; llamadas y WhatsApp buscan el contacto y se programan.
+
+    val saveIdea: (VoiceIntent) -> Unit = { vi ->
+        val content = vi.content.ifBlank { vi.title }
+        val org = SmartNoteOrganizer.organize(content, vi.title)
+        val now = System.currentTimeMillis()
+        state.saveNote(
+            SmartNote(
+                id = 0L,
+                title = vi.title.ifBlank { org.title },
+                content = content,
+                type = if (vi.kind == VoiceIntentKind.IDEA) SmartNoteType.IDEA else org.type,
+                tags = org.tags,
+                createdAtMillis = now,
+                updatedAtMillis = now,
+            ),
+        )
+        section = AppSection.AGENDA; tab = 2
+        showMessage(if (vi.kind == VoiceIntentKind.IDEA) "💡 Idea guardada en Notas" else "Nota guardada")
+    }
+
+    val scheduleForContact: (VoiceIntent, SelectedPhoneContact?) -> Unit = { vi, contact ->
+        val isWa = vi.kind == VoiceIntentKind.WHATSAPP
+        val title = when {
+            contact == null -> vi.title
+            isWa -> "Enviar WhatsApp a ${contact.displayName}"
+            else -> "Llamar a ${contact.displayName}"
+        }
+        val draft = ReminderDraft(
+            title = title,
+            message = vi.message,
+            dateTimeMillis = vi.dateTimeMillis,
+            isWhatsApp = isWa,
+            phone = contact?.phoneNumber.orEmpty(),
+            contactName = contact?.displayName,
+        )
+        // Con el contacto claro (y el mensaje, si es WhatsApp) se guarda de una vez
+        if (contact != null && (!isWa || vi.message.isNotBlank()) && vi.dateTimeMillis > System.currentTimeMillis()) {
+            val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis, isWa)
+            val cuando = formatDate(vi.dateTimeMillis, "EEE d MMM, h:mm a")
+            showMessage(
+                (if (isWa) "✅ WhatsApp para ${contact.displayName} listo · $cuando" else "✅ Llamada a ${contact.displayName} · $cuando") +
+                    if (result == ScheduleResult.APPROXIMATE) " (activa las alarmas exactas)" else "",
+            )
+        } else {
+            taskEditor = TaskEditorRequest(draft = draft)
+        }
+    }
+
+    val resolveContact: (VoiceIntent) -> Unit = { vi ->
+        scope.launch {
+            val found = withContext(Dispatchers.IO) { ContactSearch.find(context, vi.personName) }
+            when (found.size) {
+                0 -> {
+                    scheduleForContact(vi, null)
+                    showMessage("No encontré a \"${vi.personName}\" en tus contactos. Elígelo con el botón de contactos.")
+                }
+                1 -> scheduleForContact(vi, found.first())
+                else -> contactChoice = vi to found
+            }
+        }
+    }
+
+    val contactsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val vi = waitingContactsPermission ?: return@rememberLauncherForActivityResult
+        waitingContactsPermission = null
+        if (granted) resolveContact(vi) else {
+            showMessage("Sin permiso de contactos: elige la persona a mano.")
+            scheduleForContact(vi, null)
+        }
+    }
+
+    val handleVoiceIntent: (VoiceIntent) -> Unit = { vi ->
+        when (vi.kind) {
+            VoiceIntentKind.IDEA, VoiceIntentKind.NOTE -> saveIdea(vi)
+            VoiceIntentKind.CALL, VoiceIntentKind.WHATSAPP -> when {
+                vi.personName.isBlank() -> scheduleForContact(vi, null)
+                ContactSearch.hasPermission(context) -> resolveContact(vi)
+                else -> {
+                    waitingContactsPermission = vi
+                    contactsPermission.launch(Manifest.permission.READ_CONTACTS)
+                }
+            }
+            VoiceIntentKind.REMINDER -> taskEditor = TaskEditorRequest(
+                draft = ReminderDraft(title = vi.title, message = vi.message, dateTimeMillis = vi.dateTimeMillis, isWhatsApp = false),
+            )
+        }
+    }
+
+    val startVoiceReminder = rememberSpeechInput("Dime tu idea, a quién llamar o escribir, o qué recordar") { text ->
+        if (AiSettings.isEnabled(context)) {
+            thinking = "Entendiendo lo que dijiste..."
+            scope.launch {
+                val vi = withContext(Dispatchers.IO) {
+                    runCatching { AiAssistant.parseVoice(context, text) }
+                }
+                thinking = null
+                vi.onFailure { showMessage("IA no disponible (${it.message}). Lo organicé sin IA.") }
+                handleVoiceIntent(vi.getOrElse { LocalIntentParser.parse(text) })
+            }
+        } else {
+            handleVoiceIntent(LocalIntentParser.parse(text))
+        }
     }
 
     val openWhatsApp: (AgendaTask) -> Unit = { task ->
@@ -247,6 +378,7 @@ fun AgendaWaApp(
                     onBackup = { showBackup = true; scope.launch { drawerState.close() } },
                     onAlarms = { showAlarmSettings = true; scope.launch { drawerState.close() } },
                     onProfile = { showProfile = true; scope.launch { drawerState.close() } },
+                    onSettings = { showSettings = true; scope.launch { drawerState.close() } },
                 )
             },
         ) {
@@ -289,6 +421,8 @@ fun AgendaWaApp(
                                             onClick = { showMenu = false; showAlarmSettings = true })
                                         DropdownMenuItem(text = { Text("Perfil") }, leadingIcon = { Icon(Icons.Rounded.Person, null) },
                                             onClick = { showMenu = false; showProfile = true })
+                                        DropdownMenuItem(text = { Text("Configuración (IA y huella)") }, leadingIcon = { Icon(Icons.Rounded.Settings, null) },
+                                            onClick = { showMenu = false; showSettings = true })
                                     }
                                 }
                             },
@@ -441,6 +575,21 @@ fun AgendaWaApp(
             )
         }
 
+        if (showSettings) {
+            SettingsDialog(onDismiss = { showSettings = false }, showMessage = showMessage)
+        }
+
+        thinking?.let { ThinkingDialog(it) }
+
+        contactChoice?.let { (vi, list) ->
+            ContactChoiceDialog(
+                name = vi.personName,
+                contacts = list,
+                onPick = { contactChoice = null; scheduleForContact(vi, it) },
+                onSkip = { contactChoice = null; scheduleForContact(vi, null) },
+            )
+        }
+
         if (showAlarmSettings) {
             AlarmSettingsDialog(
                 state = state,
@@ -507,6 +656,7 @@ private fun AppDrawer(
     onBackup: () -> Unit,
     onAlarms: () -> Unit,
     onProfile: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     ModalDrawerSheet {
         Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -552,6 +702,10 @@ private fun AppDrawer(
             NavigationDrawerItem(
                 label = { Text("Perfil") }, icon = { Icon(Icons.Rounded.Person, null) },
                 selected = false, onClick = onProfile, modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            NavigationDrawerItem(
+                label = { Text("Configuración (IA y huella)") }, icon = { Icon(Icons.Rounded.Settings, null) },
+                selected = false, onClick = onSettings, modifier = Modifier.padding(horizontal = 12.dp),
             )
             Spacer(Modifier.height(16.dp))
             Text(

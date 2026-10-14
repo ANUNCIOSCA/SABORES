@@ -19,6 +19,9 @@ data class ReminderDraft(
     val message: String,
     val dateTimeMillis: Long,
     val isWhatsApp: Boolean,
+    /** Teléfono ya elegido (por ejemplo, al dictar "llamar a Carlos"). */
+    val phone: String = "",
+    val contactName: String? = null,
 )
 
 enum class ScheduleResult { EXACT, APPROXIMATE, SKIPPED }

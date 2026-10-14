@@ -49,6 +49,18 @@ object WhatsApp {
         runCatching { context.startActivity(intent(phone, text)); true }.getOrDefault(false)
 }
 
+/** Llamadas: abre el marcador con el número listo (solo falta tocar llamar). */
+object PhoneCall {
+    fun isCall(task: AgendaTask): Boolean = !task.isWhatsApp && task.phone.isNotBlank()
+
+    fun intent(phone: String): Intent =
+        Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + phone.filter { it.isDigit() || it == '+' }))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun open(context: Context, phone: String): Boolean =
+        runCatching { context.startActivity(intent(phone)); true }.getOrDefault(false)
+}
+
 // ---------------------------------------------------------------------------
 // Programación de alarmas
 // ---------------------------------------------------------------------------
@@ -223,6 +235,15 @@ object NotificationHelper {
         builder.addAction(0, "Abrir WhatsApp", pi)
     }
 
+    private fun callAction(context: Context, task: AgendaTask, builder: NotificationCompat.Builder) {
+        if (!PhoneCall.isCall(task)) return
+        val pi = PendingIntent.getActivity(
+            context, task.id.hashCode() * 10 + 8, PhoneCall.intent(task.phone),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        builder.addAction(0, "Llamar", pi)
+    }
+
     fun buildAlarmNotification(context: Context, task: AgendaTask): android.app.Notification {
         createChannels(context)
         val fullScreen = PendingIntent.getActivity(
@@ -249,7 +270,8 @@ object NotificationHelper {
             .addAction(0, "APAGAR", actionIntent(context, task, AlarmActionReceiver.ACTION_STOP, 1))
             .addAction(0, "Recordarme en 5 min", actionIntent(context, task, AlarmActionReceiver.ACTION_SNOOZE, 2))
         whatsappAction(context, task, builder)
-        if (!task.isWhatsApp) builder.addAction(0, "Eliminar aviso", actionIntent(context, task, AlarmActionReceiver.ACTION_DELETE, 3))
+        callAction(context, task, builder)
+        if (!task.isWhatsApp && !PhoneCall.isCall(task)) builder.addAction(0, "Eliminar aviso", actionIntent(context, task, AlarmActionReceiver.ACTION_DELETE, 3))
         return builder.build()
     }
 
@@ -278,6 +300,7 @@ object NotificationHelper {
             .setContentIntent(open)
             .addAction(0, "Recordarme en 5 min", actionIntent(context, task, AlarmActionReceiver.ACTION_SNOOZE, 2))
         whatsappAction(context, task, builder)
+        callAction(context, task, builder)
         builder.addAction(0, "Eliminar aviso", actionIntent(context, task, AlarmActionReceiver.ACTION_DELETE, 3))
         runCatching { NotificationManagerCompat.from(context).notify(preAlertId(task.id), builder.build()) }
     }

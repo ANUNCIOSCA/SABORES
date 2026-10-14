@@ -70,6 +70,16 @@
         .preview-sub { margin-top: 6px; font-size: 14px; }
         .preview-sub .red { color: #d61f2c; font-weight: 700; }
         .err { color: #c0392b; font-size: 13px; margin-top: 8px; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
+        .gcell { background: #f4fbfb; border: 2px solid transparent; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+        .gcell.picked { border-color: #d61f2c; }
+        .gcell img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #ddd; display: block; }
+        .gsrc { font-size: 11px; color: #555; padding: 4px 6px 0; }
+        .gbtns { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+        .gbtns .btn { width: 100%; }
+        #bgBanner { display: none; align-items: center; gap: 10px; background: #fff; border-radius: 12px; padding: 8px 10px; box-shadow: 0 3px 10px rgba(0,0,0,.18); }
+        #bgBanner img { width: 54px; height: 54px; object-fit: cover; border-radius: 8px; }
+        #bgBanner span { flex: 1; font-size: 13px; font-weight: 600; color: #0f5a5a; }
         .redline { background: #fdecea; border-left: 4px solid #d61f2c; border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 13px; color: #8a1c14; }
         .chip[class*="ver-"]::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: #1a8b8b; }
         .chip.ver-amarillista::before { background: #f1c40f; }
@@ -82,8 +92,9 @@
         /* Tablet o celular horizontal: filtros a la izquierda, noticias en columnas */
         @media (min-width: 760px) {
             .content { max-width: 1200px; display: grid; grid-template-columns: 340px 1fr; align-items: start; gap: 16px; }
-            .content > .panel { position: sticky; top: 72px; grid-row: 1 / span 2; }
+            .content > .panel { position: sticky; top: 72px; grid-row: 1 / span 3; }
             .content > .status { grid-column: 2; text-align: left; }
+            #bgBanner { grid-column: 2; }
             #results { grid-column: 2; display: grid !important; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
             .content > .status { order: 0; }
         }
@@ -133,6 +144,7 @@
             <button class="btn btn-light btn-small" id="trackBtn">+ Rastrear este tema</button>
         </div>
 
+        <div id="bgBanner"><img alt=""><span></span><button class="btn btn-small btn-light" id="bgClear">Quitar</button></div>
         <div class="status" id="status"></div>
         <div id="results" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
@@ -365,12 +377,14 @@ function renderGroups() {
             '<button class="btn btn-small" data-act="use">Usar en plantilla</button>' +
             '<button class="btn btn-small btn-light" data-act="more">Ver cobertura</button>' +
             '<button class="btn btn-small btn-light" data-act="deep">Profundizar</button>' +
+            '<button class="btn btn-small btn-light" data-act="img">Imágenes</button>' +
             '<button class="btn btn-small btn-red" data-act="ai">' + (aiProviders().length ? 'Redactar con IA' : 'Armar placa') + '</button>' +
             '</div>' +
             '<div class="detail"></div>';
         card.querySelector('[data-act="use"]').onclick = function () { useInTemplate(g.title, '', state.cat, ''); };
         card.querySelector('[data-act="more"]').onclick = function () { toggleCoverage(card, g); };
         card.querySelector('[data-act="deep"]').onclick = function () { deepen(card, g); };
+        card.querySelector('[data-act="img"]').onclick = function () { showImages(card, g); };
         card.querySelector('[data-act="ai"]').onclick = function () { aiWrite(card, g, false); };
         box.appendChild(card);
     });
@@ -470,6 +484,7 @@ function extractArticle(html) {
     var doc = new DOMParser().parseFromString(html, 'text/html');
     var meta = function (sel) { var n = doc.querySelector(sel); return n ? (n.getAttribute('content') || '').trim() : ''; };
     var description = meta('meta[property="og:description"]') || meta('meta[name="description"]');
+    var images = collectImages(doc, meta);
     ['script', 'style', 'noscript', 'nav', 'header', 'footer', 'aside', 'form', 'iframe', 'button', 'figcaption']
         .forEach(function (t) { Array.prototype.forEach.call(doc.querySelectorAll(t), function (n) { n.remove(); }); });
     var root = doc.querySelector('[itemprop="articleBody"]') || doc.querySelector('article')
@@ -482,7 +497,33 @@ function extractArticle(html) {
         if (/suscr[ií]bete|newsletter|s[ií]guenos|cookies|todos los derechos|lee tambi[eé]n|te puede interesar/i.test(t)) return;
         seen[t] = 1; paras.push(t);
     });
-    return { description: description, text: paras.join('\n\n').slice(0, 8000) };
+    return { description: description, text: paras.join('\n\n').slice(0, 8000), images: images };
+}
+
+// Fotos de la nota: la principal (og:image) y las del cuerpo del artículo, sin logos ni íconos
+function collectImages(doc, meta) {
+    var out = [], seen = {};
+    var add = function (u) {
+        if (!u) return;
+        u = u.trim().split(' ')[0];
+        if (u.indexOf('//') === 0) u = 'https:' + u;
+        if (!/^https?:/.test(u) || /\.(svg|gif)(\?|$)/i.test(u)) return;
+        if (/logo|icon|avatar|favicon|sprite|banner|publicidad|ads?[\/_-]|placeholder|pixel|blank/i.test(u)) return;
+        var key = u.replace(/[?#].*$/, '').replace(/-\d+x\d+(?=\.\w+$)/, '');
+        if (seen[key]) return;
+        seen[key] = 1; out.push(u);
+    };
+    add(meta('meta[property="og:image"]'));
+    add(meta('meta[name="twitter:image"]'));
+    var root = doc.querySelector('[itemprop="articleBody"]') || doc.querySelector('article') || doc.querySelector('main') || doc.body;
+    Array.prototype.forEach.call(root ? root.querySelectorAll('img') : [], function (img) {
+        var w = parseInt(img.getAttribute('width') || '0', 10);
+        if (w && w < 300) return;
+        var srcset = img.getAttribute('srcset') || img.getAttribute('data-srcset') || '';
+        var biggest = srcset ? srcset.split(',').map(function (x) { return x.trim(); }).pop() : '';
+        add(biggest || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('src'));
+    });
+    return out.slice(0, 12);
 }
 
 async function readArticle(item) {
@@ -522,11 +563,85 @@ function showReader(container, item) {
     });
 }
 
+// ---------- imágenes de la noticia ----------
+async function showImages(card, g) {
+    var d = card.querySelector('.detail');
+    d.dataset.kind = 'img';
+    card.classList.add('open');
+    d.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Buscando las fotos de las notas...';
+    var read = await readTopArticles(g, 4);
+    var imgs = [];
+    var seenImg = {};
+    read.forEach(function (r) {
+        (r.art.images || []).forEach(function (u) {
+            var key = u.replace(/[?#].*$/, '');
+            if (!seenImg[key]) { seenImg[key] = 1; imgs.push({ url: u, source: r.item.source }); }
+        });
+    });
+    if (!imgs.length) {
+        d.innerHTML = '<div class="hint">No encontré fotos en las notas de esta historia' + (read.length ? '' : ' (no pude abrirlas)') + '. Prueba con "Ver cobertura" → Abrir.</div>';
+        return;
+    }
+    d.innerHTML = '<div class="label" style="margin-top:0">' + imgs.length + ' fotos de ' + read.length + (read.length === 1 ? ' medio' : ' medios') + '</div>' +
+        '<div class="hint">Da crédito al medio al publicar (ej. "Foto: ' + esc(imgs[0].source) + '").</div>' +
+        '<div class="gallery"></div>';
+    var grid = d.querySelector('.gallery');
+    imgs.forEach(function (im, i) {
+        var cell = document.createElement('div');
+        cell.className = 'gcell';
+        cell.innerHTML = '<img loading="lazy" referrerpolicy="no-referrer" src="' + esc(im.url) + '">' +
+            '<div class="gsrc">' + esc(im.source) + '</div>' +
+            '<div class="gbtns"><button class="btn btn-small" data-g="bg">Usar de fondo</button>' +
+            '<button class="btn btn-small btn-light" data-g="dl">Descargar</button></div>';
+        cell.querySelector('img').onerror = function () { cell.remove(); };
+        cell.querySelector('[data-g="bg"]').onclick = function () {
+            chosenBg = im; showBgBanner();
+            Array.prototype.forEach.call(grid.querySelectorAll('.gcell'), function (c) { c.classList.remove('picked'); });
+            cell.classList.add('picked');
+        };
+        cell.querySelector('[data-g="dl"]').onclick = async function () {
+            var btn = this; btn.disabled = true; btn.textContent = 'Descargando...';
+            try {
+                if (window.R24Android && window.R24Android.saveImageUrl) {
+                    await bridgeCall('saveImageUrl', [im.url, 'R24_foto_' + Date.now()]);
+                } else { openUrl(im.url); }
+                btn.textContent = 'Guardada';
+            } catch (e) { btn.textContent = 'Error'; btn.title = e.message; btn.disabled = false; }
+        };
+        grid.appendChild(cell);
+    });
+}
+
 // ---------- pasar a la plantilla ----------
-function useInTemplate(title, subtitle, cat, tag) {
+var chosenBg = null; // { url, source }
+
+function showBgBanner() {
+    var b = document.getElementById('bgBanner');
+    if (!chosenBg) { b.style.display = 'none'; return; }
+    b.style.display = 'flex';
+    b.querySelector('img').src = chosenBg.url;
+    b.querySelector('span').textContent = 'Fondo elegido · foto de ' + chosenBg.source;
+}
+
+function bridgeCall(method, args) {
+    return new Promise(function (resolve, reject) {
+        var id = 'b' + (++_seq);
+        _cb[id] = function (status, text) { if (status === 0) reject(new Error(text)); else resolve(text); };
+        window.R24Android[method].apply(window.R24Android, [id].concat(args));
+    });
+}
+
+async function useInTemplate(title, subtitle, cat, tag) {
+    var bg = '';
+    if (chosenBg && window.R24Android && window.R24Android.prepareBackground) {
+        setStatus('<span class="spinner"></span> Preparando la foto de fondo...');
+        try { await bridgeCall('prepareBackground', [chosenBg.url]); bg = '1'; }
+        catch (e) { setStatus('No pude usar la foto (' + esc(e.message) + '). Sigo sin fondo.'); await sleep(1200); }
+    }
     var p = new URLSearchParams();
+    if (bg) p.set('bg', bg);
     p.set('title', title.toUpperCase());
-    if (subtitle) p.set('subtitle', subtitle);
+    if (subtitle) p.set('subtitle', plain(subtitle));
     if (cat) p.set('cat', cat);
     if (tag) p.set('tag', tag.toUpperCase());
     window.location.href = 'generador.html?' + p.toString();
@@ -603,8 +718,7 @@ var R24_GUIDE = [
     '- TÍTULO: la sentencia emocional, 4-8 palabras, MAYÚSCULAS, con el lugar dentro. Juzga, no describe. No repite la franja.',
     '  Se reparte en 2 líneas cortas y equilibradas (máx. ~22 caracteres cada una).',
     '- SUBTÍTULO: EL DATO QUE DUELE, con cifra o fecha ATRIBUIDA ("según…", "denuncian vecinos…"). No parafrasea el título.',
-    '  En rojo va SOLO lo que más pesa: envuelve en **dobles asteriscos** de 1 a 4 palabras (la cifra, la fecha o el nombre',
-    '  clave). Nunca media frase ni el subtítulo completo. Ej.: "La falla dejó sin agua a **5 municipios**, según El Pitazo".',
+    '  Texto plano, sin asteriscos ni marcas de formato.',
     '',
     'EL DATO QUE DUELE: busca el contraste entre lo que el lugar o la persona es o fue y la desgracia de hoy:',
     'vocación productiva, volumen humano, promesa incumplida (quién, cuándo, cuánto), pasado glorioso, tiempo acumulado',
@@ -672,9 +786,9 @@ function buildPrompt(g, deep, articles) {
     ].join('\n');
 }
 
-function renderSub(s) {
-    return esc(s).replace(/\*\*(.+?)\*\*/g, '<span class="red">$1</span>');
-}
+// El subtítulo va todo en blanco: se quitan los **asteriscos** que antes lo ponían en rojo
+function plain(s) { return String(s || '').replace(/\*\*/g, ''); }
+function renderSub(s) { return esc(plain(s)); }
 
 function copyText(t) {
     if (window.R24Android && window.R24Android.copyText) { window.R24Android.copyText(t); return; }
@@ -744,8 +858,6 @@ function localDraft(g, articles) {
     } else if (g.items[1]) {
         sub = g.items[1].title + ', según ' + g.items[1].source + '.';
     }
-    // La primera cifra (con su palabra) sale en rojo
-    sub = sub.replace(/(\d[\d.,]*\s*(?:%|por ciento|horas?|días?|años?|municipios?|personas?|familias?|bolívares|Bs|dólares|\$)?)/, '**$1**');
     return {
         versiones: [{ tipo: 'sin IA', franja: franja, linea1: l1, linea2: l2, subtitulo: sub }],
         categoria: state.cat,
@@ -771,7 +883,7 @@ function renderDraft(box, card, g, deep, r, readInfo) {
             '<label class="hint">Franja roja <span data-count></span></label><input class="ed" data-f="tag" maxlength="30">' +
             '<label class="hint">Título · línea 1</label><input class="ed" data-f="l1" maxlength="40">' +
             '<label class="hint">Título · línea 2</label><input class="ed" data-f="l2" maxlength="40">' +
-            '<label class="hint">Subtítulo (lo que va entre **asteriscos** sale en rojo)</label><textarea class="ed" data-f="sub" rows="3" maxlength="220"></textarea>' +
+            '<label class="hint">Subtítulo</label><textarea class="ed" data-f="sub" rows="3" maxlength="220"></textarea>' +
             '<div class="hint" style="margin-top:6px">Vista previa:</div>' +
             '<div class="meta"><span class="badge hot" data-p="tag"></span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
             '<div class="preview-title" data-p="title" style="margin-top:6px"></div>' +
@@ -803,7 +915,7 @@ function renderDraft(box, card, g, deep, r, readInfo) {
             field('tag').value = (v.franja || '').toUpperCase();
             field('l1').value = (v.linea1 || '').toUpperCase();
             field('l2').value = (v.linea2 || '').toUpperCase();
-            field('sub').value = v.subtitulo || '';
+            field('sub').value = plain(v.subtitulo);
             box.querySelector('[data-why]').textContent = v.por_que ? 'Por qué: ' + v.por_que : '';
             Array.prototype.forEach.call(box.querySelectorAll('[data-versions] .chip'), function (c, j) { c.classList.toggle('on', j === i); });
             refresh();
@@ -887,6 +999,7 @@ function drawFilters() {
     });
 }
 
+document.getElementById('bgClear').onclick = function () { chosenBg = null; showBgBanner(); };
 document.getElementById('searchBtn').onclick = function () { state.query = ''; search(); };
 document.getElementById('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { state.query = ''; search(); } });
 document.getElementById('backBtn').onclick = function () {

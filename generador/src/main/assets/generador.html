@@ -493,13 +493,8 @@
 
             <div class="form-group">
                 <label for="subtitleInput">✍️ Subtítulo</label>
-                <textarea id="subtitleInput" placeholder="Descripción breve... Escribe **la palabra clave** para resaltarla en rojo" maxlength="220"></textarea>
+                <textarea id="subtitleInput" placeholder="Descripción breve con el dato clave" maxlength="220"></textarea>
                 <div class="counter" id="subtitleCounter">0/220</div>
-                <div class="red-tools">
-                    <button type="button" class="solid" id="redOnBtn">Poner en rojo lo seleccionado</button>
-                    <button type="button" id="redOffBtn">Quitar todo el rojo</button>
-                </div>
-                <div class="counter">🔴 Selecciona con el dedo las palabras del subtítulo y toca "Poner en rojo". También puedes escribirlas entre **dobles asteriscos**.</div>
                 <div class="counter">💡 Presiona Enter donde quieras que el texto baje de línea (máx. 4 líneas). Si no pones Enter, se acomoda solo.</div>
             </div>
 
@@ -1061,7 +1056,8 @@
                 for (var j = 0; j < lineTokens.length; j++) {
                     var tok = lineTokens[j];
                     var piece = tok.text + (j < lineTokens.length - 1 ? ' ' : '');
-                    c.fillStyle = tok.hot ? '#ff3b30' : 'rgba(255,255,255,0.98)';
+                    // Todo el subtítulo en blanco (el rojo no combinaba con el verde de la placa)
+                    c.fillStyle = 'rgba(255,255,255,0.98)';
                     c.fillText(piece, lx, ly);
                     lx += c.measureText(piece).width;
                 }
@@ -1335,6 +1331,20 @@
             var s = params.get('subtitle');
             var cat = params.get('cat');
             var tag = params.get('tag');
+            // Foto de la noticia elegida en el buscador como fondo
+            if (params.get('bg') && window.R24Android && window.R24Android.takeBackground) {
+                var data = window.R24Android.takeBackground();
+                if (data) {
+                    var bgImg = new Image();
+                    bgImg.onload = function() {
+                        userImage = bgImg;
+                        document.getElementById('fileName').textContent = '✓ Foto de la noticia (da crédito al medio)';
+                        if (generated) render();
+                        else document.getElementById('generateBtn').click();
+                    };
+                    bgImg.src = data;
+                }
+            }
             if (tag) {
                 document.getElementById('tagInput').value = tag.slice(0, 30);
                 var tagSi = document.querySelector('input[name="tagMode"][value="si"]');
@@ -1349,6 +1359,7 @@
                 document.getElementById('titleCounter').textContent = t.length + '/120';
             }
             if (s) {
+                s = s.replace(/\*\*/g, '');
                 document.getElementById('subtitleInput').value = s;
                 document.getElementById('subtitleCounter').textContent = s.length + '/220';
             }
@@ -1456,26 +1467,6 @@
         // Lo que se escribe en título, subtítulo y etiqueta se ve al instante en la vista previa
         ['titleInput', 'subtitleInput'].forEach(function(id) {
             document.getElementById(id).addEventListener('input', function() { if (generated) render(); });
-        });
-
-        // Elegir qué palabras del subtítulo van en rojo
-        var subtitleBox = document.getElementById('subtitleInput');
-        function keepFocus(e) { e.preventDefault(); }
-        document.getElementById('redOnBtn').addEventListener('mousedown', keepFocus);
-        document.getElementById('redOnBtn').addEventListener('touchstart', keepFocus, { passive: false });
-        document.getElementById('redOnBtn').addEventListener('click', function() {
-            var a = subtitleBox.selectionStart, b = subtitleBox.selectionEnd, v = subtitleBox.value;
-            if (a === b) { showMsg('⚠️ Primero selecciona con el dedo las palabras del subtítulo que quieres en rojo', 'error'); return; }
-            var picked = v.slice(a, b).replace(/\*\*/g, '').trim();
-            var before = v.slice(0, a), after = v.slice(b);
-            subtitleBox.value = (before + '**' + picked + '**' + after).slice(0, 220);
-            document.getElementById('subtitleCounter').textContent = subtitleBox.value.length + '/220';
-            if (generated) render();
-        });
-        document.getElementById('redOffBtn').addEventListener('click', function() {
-            subtitleBox.value = subtitleBox.value.replace(/\*\*/g, '');
-            document.getElementById('subtitleCounter').textContent = subtitleBox.value.length + '/220';
-            if (generated) render();
         });
 
         // Botones de tamaño del subtítulo (Full / Medio Full / Medio): fijos, como antes

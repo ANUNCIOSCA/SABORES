@@ -290,6 +290,74 @@ class MainActivity : ComponentActivity() {
             }.start()
         }
 
+        /** Responde al buscador con window.__r24fetch(id, status, texto). */
+        private fun reply(id: String, status: Int, text: String) {
+            val js = "window.__r24fetch && window.__r24fetch(${JSONObject.quote(id)}, $status, ${JSONObject.quote(text)})"
+            mainHandler.post { webView.evaluateJavascript(js, null) }
+        }
+
+        /** Descarga una imagen de internet: bytes y tipo (jpeg, png, webp). */
+        private fun downloadImage(url: String): Pair<ByteArray, String> {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            try {
+                conn.connectTimeout = 15_000
+                conn.readTimeout = 30_000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
+                conn.setRequestProperty("Accept", "image/avif,image/webp,image/*,*/*;q=0.8")
+                if (conn.responseCode !in 200..299) error("El sitio respondió ${conn.responseCode}")
+                val mime = (conn.contentType ?: "image/jpeg").substringBefore(';').trim().ifBlank { "image/jpeg" }
+                if (!mime.startsWith("image/")) error("El enlace no es una imagen")
+                val bytes = conn.inputStream.use { it.readBytes() }
+                if (bytes.size < 2_000) error("Imagen demasiado pequeña")
+                return bytes to mime
+            } finally {
+                conn.disconnect()
+            }
+        }
+
+        /** Guarda en la galería (Pictures/Reportalo24) una imagen encontrada en una noticia. */
+        @JavascriptInterface
+        fun saveImageUrl(id: String, url: String, fileName: String) {
+            Thread {
+                try {
+                    if (!hasLegacyStoragePermission()) {
+                        runOnUiThread { requestStorage.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+                        error("Da permiso de almacenamiento y vuelve a intentarlo")
+                    }
+                    val (bytes, mime) = downloadImage(url)
+                    val ext = when { mime.contains("png") -> "png"; mime.contains("webp") -> "webp"; else -> "jpg" }
+                    saveToGallery("$fileName.$ext", mime, false) { it.write(bytes) }
+                    runOnUiThread { Toast.makeText(this@MainActivity, "Imagen guardada en Galería › Reportalo24", Toast.LENGTH_SHORT).show() }
+                    reply(id, 200, "ok")
+                } catch (e: Exception) {
+                    reply(id, 0, e.message ?: "No se pudo descargar")
+                }
+            }.start()
+        }
+
+        /** Imagen de la noticia lista para usarse de fondo en la plantilla (la recoge takeBackground). */
+        @Volatile private var pendingBackground: String? = null
+
+        @JavascriptInterface
+        fun prepareBackground(id: String, url: String) {
+            Thread {
+                try {
+                    val (bytes, mime) = downloadImage(url)
+                    pendingBackground = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    reply(id, 200, "ok")
+                } catch (e: Exception) {
+                    reply(id, 0, e.message ?: "No se pudo descargar")
+                }
+            }.start()
+        }
+
+        @JavascriptInterface
+        fun takeBackground(): String {
+            val data = pendingBackground ?: ""
+            pendingBackground = null
+            return data
+        }
+
         /** Copia texto (copy de Instagram, hashtags) al portapapeles. */
         @JavascriptInterface
         fun copyText(text: String) {

@@ -454,7 +454,7 @@ fun IdeaLabDialog(
     val speaker = rememberSpeaker()
     val dictate = rememberSpeechInput("Cuéntame tu idea con todos los detalles") { text ->
         description = if (description.isBlank()) text.replaceFirstChar { it.uppercase() } else "$description $text"
-        if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Listo") + " Ya tomé tu idea.")
+        if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Copiado"))
     }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         if (uri != null) runCatching {

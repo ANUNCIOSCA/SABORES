@@ -423,7 +423,7 @@ fun AgendaWaApp(
     }
 
     val startVoiceReminder = rememberSpeechInput("Dime qué tienes que hacer: llamar, escribir, una reunión, un viaje o una idea") { text ->
-        if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Entendido") + " Ya tomé tu dictado.")
+        if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Copiado"))
         if (AiSettings.isEnabled(context)) {
             thinking = "Entendiendo lo que dijiste..."
             scope.launch {

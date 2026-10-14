@@ -66,6 +66,9 @@
         .preview-sub { margin-top: 6px; font-size: 14px; }
         .preview-sub .red { color: #d61f2c; font-weight: 700; }
         .err { color: #c0392b; font-size: 13px; margin-top: 8px; }
+        .ai-box .ed { width: 100%; padding: 10px; border: 2px solid #d6eaea; border-radius: 8px; font-size: 15px; font-family: inherit; margin-bottom: 4px; }
+        .ai-box .ed:focus { outline: none; border-color: #1a8b8b; }
+        .ai-box .ed[data-f="l1"], .ai-box .ed[data-f="l2"], .ai-box .ed[data-f="tag"] { text-transform: uppercase; font-weight: 800; }
         .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 50; align-items: flex-end; justify-content: center; }
         .modal-bg.show { display: flex; }
         .modal { background: #fff; width: 100%; max-width: 560px; border-radius: 16px 16px 0 0; padding: 16px; max-height: 90vh; overflow-y: auto; }
@@ -350,13 +353,26 @@ function renderGroups() {
     });
 }
 
+var readerItems = {};
 function coverageHtml(items) {
     return items.map(function (i) {
+        var key = 'r' + (++_seq);
+        readerItems[key] = i;
         return '<div class="source-line"><b>' + esc(i.source) + '</b> · ' + timeAgo(i.date) + '<br>' + esc(i.title) +
-            ' <a href="#" data-url="' + esc(i.link) + '">Abrir</a></div>';
+            ' <a href="#" data-read="' + key + '">Leer aquí</a> · <a href="#" data-url="' + esc(i.link) + '">Abrir</a>' +
+            '<div class="reader" data-for="' + key + '"></div></div>';
     }).join('');
 }
 function bindLinks(el) {
+    Array.prototype.forEach.call(el.querySelectorAll('a[data-read]'), function (a) {
+        a.onclick = function (ev) {
+            ev.preventDefault();
+            var key = a.getAttribute('data-read');
+            var box = el.querySelector('.reader[data-for="' + key + '"]');
+            if (box.innerHTML) { box.innerHTML = ''; return; }
+            showReader(box, readerItems[key]);
+        };
+    });
     Array.prototype.forEach.call(el.querySelectorAll('a[data-url]'), function (a) {
         a.onclick = function (ev) { ev.preventDefault(); openUrl(a.getAttribute('data-url')); };
     });
@@ -395,6 +411,92 @@ async function deepen(card, g) {
     } catch (e) {
         d.innerHTML = '<div class="err">No pude profundizar: ' + esc(e.message) + '</div>';
     }
+}
+
+// ---------- leer la nota completa ----------
+var UA = 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
+var articleCache = {};
+
+// Los enlaces de Google Noticias son redirecciones cifradas: se piden la firma y la fecha
+// de la página del artículo y con ellas Google devuelve la dirección real del medio.
+async function resolveGoogleLink(link) {
+    var m = link.match(/\/articles\/([^?#]+)/);
+    if (!m || link.indexOf('news.google.') < 0) return link;
+    var id = m[1], sig = null, ts = null;
+    var pages = ['https://news.google.com/articles/' + id, 'https://news.google.com/rss/articles/' + id];
+    for (var i = 0; i < pages.length && !sig; i++) {
+        try {
+            var page = await httpRequest('GET', pages[i] + '?hl=es-419&gl=VE&ceid=VE:es-419', { 'User-Agent': UA });
+            sig = (page.text.match(/data-n-a-sg="([^"]+)"/) || [])[1];
+            ts = (page.text.match(/data-n-a-ts="([^"]+)"/) || [])[1];
+        } catch (e) {}
+    }
+    if (!sig || !ts) throw new Error('Google no dio la dirección del medio');
+    var inner = JSON.stringify(['garturlreq', [['X', 'X', ['X', 'X'], null, null, 1, 1, 'US:en', null, 1, null, null, null, null, null, 0, 1], 'X', 'X', 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0], id, Number(ts), sig]);
+    var body = 'f.req=' + encodeURIComponent(JSON.stringify([[['Fbv4je', inner]]]));
+    var res = await httpRequest('POST', 'https://news.google.com/_/DotsSplashUi/data/batchexecute',
+        { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'User-Agent': UA }, body);
+    var chunk = res.text.split('\n\n')[1];
+    var url = JSON.parse(JSON.parse(chunk)[0][2])[1];
+    if (!/^https?:/.test(url)) throw new Error('Dirección no válida');
+    return url;
+}
+
+// Saca el texto principal de la página del medio (párrafos del artículo)
+function extractArticle(html) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var meta = function (sel) { var n = doc.querySelector(sel); return n ? (n.getAttribute('content') || '').trim() : ''; };
+    var description = meta('meta[property="og:description"]') || meta('meta[name="description"]');
+    ['script', 'style', 'noscript', 'nav', 'header', 'footer', 'aside', 'form', 'iframe', 'button', 'figcaption']
+        .forEach(function (t) { Array.prototype.forEach.call(doc.querySelectorAll(t), function (n) { n.remove(); }); });
+    var root = doc.querySelector('[itemprop="articleBody"]') || doc.querySelector('article')
+        || doc.querySelector('.entry-content, .post-content, .article-body, .article-content, .td-post-content, .content-body, main')
+        || doc.body;
+    var seen = {}, paras = [];
+    Array.prototype.forEach.call(root ? root.querySelectorAll('p') : [], function (p) {
+        var t = p.textContent.replace(/\s+/g, ' ').trim();
+        if (t.length < 50 || seen[t]) return;
+        if (/suscr[ií]bete|newsletter|s[ií]guenos|cookies|todos los derechos|lee tambi[eé]n|te puede interesar/i.test(t)) return;
+        seen[t] = 1; paras.push(t);
+    });
+    return { description: description, text: paras.join('\n\n').slice(0, 8000) };
+}
+
+async function readArticle(item) {
+    if (articleCache[item.link]) return articleCache[item.link];
+    var url = await resolveGoogleLink(item.link);
+    var res = await httpRequest('GET', url, { 'User-Agent': UA, 'Accept': 'text/html' });
+    if (res.status !== 200) throw new Error('El medio respondió ' + res.status);
+    var art = extractArticle(res.text);
+    art.url = url;
+    if (art.text.length < 200 && !art.description) throw new Error('No se pudo extraer el texto');
+    articleCache[item.link] = art;
+    return art;
+}
+
+// Lee hasta 3 notas de medios distintos a la vez (con tiempo límite)
+async function readTopArticles(g, max) {
+    var picked = [], sources = {};
+    g.items.forEach(function (i) { if (picked.length < max && !sources[i.source]) { sources[i.source] = 1; picked.push(i); } });
+    var withTimeout = function (p) { return Promise.race([p, sleep(25000).then(function () { throw new Error('tardó demasiado'); })]); };
+    var results = await Promise.all(picked.map(function (i) {
+        return withTimeout(readArticle(i)).then(function (a) { return { item: i, art: a }; }).catch(function () { return null; });
+    }));
+    return results.filter(Boolean);
+}
+
+function showReader(container, item) {
+    container.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Abriendo la nota de ' + esc(item.source) + '...';
+    readArticle(item).then(function (a) {
+        container.innerHTML = '<div class="ai-box"><h4 style="margin-top:0">' + esc(item.source) + '</h4>' +
+            (a.description ? '<p><i>' + esc(a.description) + '</i></p>' : '') +
+            esc(a.text).split('\n\n').map(function (p) { return '<p style="margin-top:8px">' + p + '</p>'; }).join('') +
+            '<div class="actions"><button class="btn btn-small btn-light" data-act="orig">Ver en el sitio del medio</button></div></div>';
+        container.querySelector('[data-act="orig"]').onclick = function () { openUrl(a.url); };
+    }).catch(function (e) {
+        container.innerHTML = '<div class="err">No pude leer esta nota (' + esc(e.message) + '). <a href="#" data-url="' + esc(item.link) + '">Abrirla en el navegador</a></div>';
+        bindLinks(container);
+    });
 }
 
 // ---------- pasar a la plantilla ----------
@@ -467,8 +569,11 @@ async function aiCall(prompt) {
     throw lastErr || new Error('No se pudo usar la IA');
 }
 
-function buildPrompt(g, deep) {
+function buildPrompt(g, deep, articles) {
     var lines = g.items.map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; });
+    var full = (articles || []).map(function (r) {
+        return '### ' + r.item.source + ' — ' + r.item.title + '\n' + (r.art.description ? r.art.description + '\n' : '') + r.art.text.slice(0, 3500);
+    });
     var rel = (deep && g.related ? g.related : []).map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; });
     return [
         'Eres el editor jefe de Repórtalo 24 (@reportalo24), medio digital venezolano. Estilo: directo, de alto impacto,',
@@ -478,6 +583,10 @@ function buildPrompt(g, deep) {
         'Titulares de distintos medios sobre la misma historia:',
         lines.join('\n'),
         rel.length ? '\nCobertura relacionada de los últimos 7 días (antecedentes y seguimiento):\n' + rel.slice(0, 25).join('\n') : '',
+        full.length ? '\nTEXTO COMPLETO DE LAS NOTAS (tu fuente principal: saca de aquí cifras, nombres, lugares y declaraciones):\n' + full.join('\n\n') : '',
+        '',
+        'La pieza es una placa de Instagram/WhatsApp con: FRANJA ROJA arriba (una etiqueta corta), TÍTULO grande en 2 líneas',
+        'y SUBTÍTULO debajo. El título debe llevar el hecho más fuerte y el subtítulo el dato concreto que lo sostiene.',
         '',
         'Responde SOLO un JSON con:',
         '{',
@@ -485,7 +594,7 @@ function buildPrompt(g, deep) {
         ' "linea2": "segunda línea del título, MAYÚSCULAS, máx. 22 caracteres",',
         ' "subtitulo": "máx. 200 caracteres con el dato que más duele; envuelve UNA frase clave en **dobles asteriscos**",',
         ' "categoria": "NACIONAL | ECONOMÍA | POLÍTICA | DEPORTE | INTERNACIONAL",',
-        ' "etiqueta": "máx. 18 caracteres, ej. ÚLTIMA HORA, SUCESOS, ALERTA, EXCLUSIVO",',
+        ' "etiqueta": "FRANJA ROJA: máx. 18 caracteres en MAYÚSCULAS que diga de qué va (ej. ÚLTIMA HORA, SUCESOS, ALERTA, DÓLAR HOY, GUÁRICO)",',
         ' "resumen": "3-4 frases con lo que se sabe",',
         ' "datos_clave": ["cifras, nombres, lugares y fechas que aparecen"],',
         ' "contraste": "en qué coinciden y en qué difieren los medios (vacío si solo hay uno)",',
@@ -506,17 +615,28 @@ async function aiWrite(card, g, deep) {
     card.classList.add('open');
     var box = document.createElement('div');
     box.className = 'ai-box';
-    box.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Redactando al estilo R24...';
+    box.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Leyendo las notas completas de los medios...';
     if (!deep) d.innerHTML = '';
     d.appendChild(box);
     try {
-        var r = await aiCall(buildPrompt(g, deep));
-        var title = [r.linea1, r.linea2].filter(Boolean).join('\n');
+        var articles = await readTopArticles(g, 3);
+        box.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Redactando al estilo R24' +
+            (articles.length ? ' con ' + articles.length + (articles.length === 1 ? ' nota completa' : ' notas completas') : ' (solo con titulares)') + '...';
+        var r = await aiCall(buildPrompt(g, deep, articles));
+        var readInfo = articles.length
+            ? 'Leí completas: ' + articles.map(function (a) { return a.item.source; }).join(', ')
+            : 'No pude abrir las notas completas: redacté con los titulares. Revisa los datos antes de publicar.';
         var list = function (arr) { return (arr || []).length ? '<ul>' + arr.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<div class="hint">—</div>'; };
         box.innerHTML =
-            '<div class="preview-title">' + esc(r.linea1 || '') + '<br>' + esc(r.linea2 || '') + '</div>' +
-            '<div class="preview-sub">' + renderSub(r.subtitulo || '') + '</div>' +
-            '<div class="meta" style="margin-top:6px"><span class="badge hot">' + esc(r.etiqueta || '') + '</span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
+            '<div class="hint">' + esc(readInfo) + '</div>' +
+            '<label class="hint">Franja roja</label><input class="ed" data-f="tag" maxlength="30" value="' + esc((r.etiqueta || '').toUpperCase()) + '">' +
+            '<label class="hint">Título · línea 1</label><input class="ed" data-f="l1" maxlength="40" value="' + esc((r.linea1 || '').toUpperCase()) + '">' +
+            '<label class="hint">Título · línea 2</label><input class="ed" data-f="l2" maxlength="40" value="' + esc((r.linea2 || '').toUpperCase()) + '">' +
+            '<label class="hint">Subtítulo (lo que va entre **asteriscos** sale en rojo)</label><textarea class="ed" data-f="sub" rows="3" maxlength="220">' + esc(r.subtitulo || '') + '</textarea>' +
+            '<div class="hint" style="margin-top:6px">Vista previa:</div>' +
+            '<div class="meta"><span class="badge hot" data-p="tag"></span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
+            '<div class="preview-title" data-p="title" style="margin-top:6px"></div>' +
+            '<div class="preview-sub" data-p="sub"></div>' +
             '<div class="actions"><button class="btn btn-small" data-act="useai">Usar en plantilla</button>' +
             '<button class="btn btn-small btn-light" data-act="again">Otra versión</button></div>' +
             '<h4>Resumen</h4><div>' + esc(r.resumen || '') + '</div>' +
@@ -526,7 +646,18 @@ async function aiWrite(card, g, deep) {
             '<h4>Otros títulos</h4>' + list(r.alternativas);
         var cats = ['NACIONAL', 'ECONOMÍA', 'POLÍTICA', 'DEPORTE', 'INTERNACIONAL'];
         var cat = cats.indexOf((r.categoria || '').toUpperCase()) >= 0 ? r.categoria.toUpperCase() : state.cat;
-        box.querySelector('[data-act="useai"]').onclick = function () { useInTemplate(title || g.title, r.subtitulo || '', cat, r.etiqueta || ''); };
+        var val = function (f) { return box.querySelector('[data-f="' + f + '"]').value.trim(); };
+        var refresh = function () {
+            box.querySelector('[data-p="tag"]').textContent = val('tag').toUpperCase();
+            box.querySelector('[data-p="title"]').innerHTML = esc(val('l1').toUpperCase()) + '<br>' + esc(val('l2').toUpperCase());
+            box.querySelector('[data-p="sub"]').innerHTML = renderSub(val('sub'));
+        };
+        Array.prototype.forEach.call(box.querySelectorAll('.ed'), function (el) { el.oninput = refresh; });
+        refresh();
+        box.querySelector('[data-act="useai"]').onclick = function () {
+            var t = [val('l1'), val('l2')].filter(Boolean).join('\n') || g.title;
+            useInTemplate(t, val('sub'), cat, val('tag'));
+        };
         box.querySelector('[data-act="again"]').onclick = function () { box.remove(); aiWrite(card, g, deep); };
     } catch (e) {
         box.innerHTML = '<div class="err">' + esc(e.message) + '</div>';

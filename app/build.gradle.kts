@@ -12,8 +12,8 @@ android {
         applicationId = "com.agendawa.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "2.0.0"
+        versionCode = 17
+        versionName = "2.0.1"
     }
 
     signingConfigs {

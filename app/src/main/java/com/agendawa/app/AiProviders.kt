@@ -24,7 +24,7 @@ enum class AiProvider(
 ) {
     GEMINI(
         "gemini", "Gemini (Google)", AiProtocol.GEMINI,
-        "https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-flash",
+        "https://generativelanguage.googleapis.com/v1beta", "gemini-flash-latest",
         "AIza...", "https://aistudio.google.com/apikey",
         "Tiene plan gratis con límite diario.",
     ),
@@ -115,7 +115,10 @@ object AiSettings {
     fun isEnabled(context: Context): Boolean = configured(context).isNotEmpty()
 }
 
-class AiException(message: String) : Exception(message)
+open class AiException(message: String) : Exception(message)
+
+/** El modelo configurado ya no existe (los proveedores retiran modelos viejos). */
+class AiModelNotFound(message: String) : AiException(message)
 
 /** Cliente único para todos los proveedores. Se llama fuera del hilo principal. */
 object AiClient {
@@ -139,7 +142,38 @@ object AiClient {
         throw lastError ?: AiException("No se pudo usar la IA")
     }
 
-    fun generateWith(context: Context, p: AiProvider, key: String, model: String, prompt: String, json: Boolean): String {
+    fun generateWith(context: Context, p: AiProvider, key: String, model: String, prompt: String, json: Boolean): String =
+        try {
+            generateOnce(p, key, model, prompt, json)
+        } catch (e: AiModelNotFound) {
+            // El modelo fue retirado: se busca uno vigente en la cuenta, se guarda y se reintenta una vez
+            val replacement = runCatching { pickModel(p, listModels(p, key)) }.getOrNull()
+                ?.takeIf { it != model } ?: throw e
+            AiSettings.save(context, p, key, replacement)
+            generateOnce(p, key, replacement, prompt, json)
+        }
+
+    /** Elige el mejor modelo de la lista: el sugerido si está, si no el más nuevo de uso general. */
+    fun pickModel(p: AiProvider, models: List<String>): String? {
+        if (models.isEmpty()) return null
+        if (p.defaultModel in models) return p.defaultModel
+        val special = Regex("image|tts|audio|live|embed|vision|guard|whisper|transcribe|search|realtime|aqa|robotics|computer", RegexOption.IGNORE_CASE)
+        val general = models.filterNot { special.containsMatchIn(it) }.ifEmpty { models }
+        val preferred = when (p) {
+            AiProvider.GEMINI -> listOf("flash-latest", "flash")
+            AiProvider.CLAUDE -> listOf("haiku", "sonnet")
+            AiProvider.OPENAI -> listOf("mini")
+            else -> emptyList()
+        }
+        for (word in preferred) {
+            val hits = general.filter { it.contains(word, ignoreCase = true) }
+            val stable = hits.filterNot { it.contains("preview") || it.contains("exp") || it.contains("lite") }
+            (stable.ifEmpty { hits }).maxOrNull()?.let { return it }
+        }
+        return general.maxOrNull()
+    }
+
+    private fun generateOnce(p: AiProvider, key: String, model: String, prompt: String, json: Boolean): String {
         if (key.isBlank()) throw AiException("Falta la clave de ${p.label}")
         val finalPrompt = if (json) "$prompt\n\nResponde únicamente con el JSON, sin texto adicional." else prompt
         return when (p.protocol) {
@@ -255,12 +289,16 @@ object AiClient {
                     val err = JSONObject(raw).opt("error")
                     if (err is JSONObject) err.optString("message") else err?.toString()
                 }.getOrNull()?.takeIf { it.isNotBlank() }
+                if (code == 404 && model.isNotBlank()) {
+                    throw AiModelNotFound("${p.label}: el modelo \"$model\" ya no está disponible. Toca \"Ver modelos\" y elige otro.")
+                }
                 throw AiException(
                     "${p.label}: " + when (code) {
-                        400 -> "petición rechazada" + (apiMsg?.let { " ($it)" } ?: "")
-                        401, 403 -> "la clave no es válida o no tiene permiso."
+                        400 -> if (apiMsg?.contains("API key", ignoreCase = true) == true) "la clave no es válida. Cópiala de nuevo completa."
+                        else "petición rechazada" + (apiMsg?.let { " ($it)" } ?: "")
+                        401, 403 -> "la clave no es válida o no tiene permiso. Cópiala de nuevo completa."
                         402 -> "la cuenta no tiene saldo."
-                        404 -> "el modelo \"$model\" no existe. Elige otro con \"Ver modelos\"."
+                        404 -> "no se encontró la dirección del servicio."
                         429 -> "se alcanzó el límite de uso. Intenta en un rato."
                         else -> "error $code" + (apiMsg?.let { ": $it" } ?: "")
                     },

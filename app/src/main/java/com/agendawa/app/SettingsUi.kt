@@ -275,6 +275,11 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
                                     runCatching { AiClient.test(context, p, k, m); "✅ ${p.label} conectado y funcionando" }
                                         .getOrElse { "❌ ${it.message}" }
                                 }
+                                val used = AiSettings.model(context, p)
+                                if (provider == p && used != m) {
+                                    model = used
+                                    testResult += "\nEl modelo $m ya no existe; se cambió solo a $used."
+                                }
                                 testing = false
                             }
                         },

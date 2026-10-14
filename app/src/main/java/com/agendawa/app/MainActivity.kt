@@ -74,6 +74,8 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,6 +98,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : FragmentActivity() {
     companion object {
         const val EXTRA_OPEN_SECTION = "open_section"
+        const val ACTION_VOICE = "com.agendawa.app.VOICE"
         /** Si la app estuvo en segundo plano más de esto, vuelve a pedir la huella. */
         private const val RELOCK_AFTER_MS = 60_000L
     }
@@ -104,6 +107,7 @@ class MainActivity : FragmentActivity() {
     private val openSection = mutableStateOf<String?>(null)
     private val focusTaskId = mutableStateOf<Long?>(null)
     private val locked = mutableStateOf(false)
+    private val voiceRequested = mutableStateOf(false)
     private var backgroundSince = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -118,6 +122,8 @@ class MainActivity : FragmentActivity() {
                     sharedContent = sharedContent,
                     openSection = openSection,
                     focusTaskId = focusTaskId,
+                    voiceRequested = voiceRequested,
+                    locked = locked,
                 )
                 if (locked.value) AgendaWaTheme { LockScreen(onUnlock = { locked.value = false }) }
             }
@@ -145,6 +151,7 @@ class MainActivity : FragmentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+        if (intent.action == ACTION_VOICE) voiceRequested.value = true
         SharedContentParser.from(intent)?.let { sharedContent.value = it }
         intent.getStringExtra(EXTRA_OPEN_SECTION)?.let { openSection.value = it }
         val id = intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L)
@@ -185,6 +192,8 @@ fun AgendaWaApp(
     sharedContent: MutableState<SharedContent?>,
     openSection: MutableState<String?>,
     focusTaskId: MutableState<Long?>,
+    voiceRequested: MutableState<Boolean>,
+    locked: State<Boolean>,
 ) {
     val context = LocalContext.current
     val state = remember { AppState(context.applicationContext) }
@@ -243,7 +252,21 @@ fun AgendaWaApp(
     }
 
     // ------------------------------------------------- asistente de voz
-    // Ideas y notas se guardan solas; llamadas y WhatsApp buscan el contacto y se programan.
+    // Todo por voz: una frase puede traer varias cosas. Cada una se guarda sola cuando está
+    // completa; si falta algo (qué persona, qué mensaje) se pregunta, y al final se confirma en voz alta.
+
+    val speaker = rememberSpeaker()
+    var voiceQueue by remember { mutableStateOf<List<VoiceIntent>>(emptyList()) }
+    var voiceBusy by remember { mutableStateOf(false) }
+    val voiceDone = remember { mutableStateListOf<String>() }
+    var editorFromVoice by remember { mutableStateOf(false) }
+    var askingMessage by remember { mutableStateOf<Pair<VoiceIntent, SelectedPhoneContact>?>(null) }
+
+    /** Termina la acción actual; [said] es lo que se confirma al final. */
+    val finishVoice: (String?) -> Unit = { said ->
+        if (!said.isNullOrBlank()) voiceDone += said
+        voiceBusy = false
+    }
 
     val saveIdea: (VoiceIntent) -> Unit = { vi ->
         val content = vi.content.ifBlank { vi.title }
@@ -261,7 +284,50 @@ fun AgendaWaApp(
             ),
         )
         section = AppSection.AGENDA; tab = 2
-        showMessage(if (vi.kind == VoiceIntentKind.IDEA) "💡 Idea guardada en Notas" else "Nota guardada")
+        finishVoice(if (vi.kind == VoiceIntentKind.IDEA) "Idea guardada en notas" else "Nota guardada")
+    }
+
+    /** Recordatorios, reuniones y viajes: se guardan de una vez. */
+    val saveReminder: (VoiceIntent) -> Unit = { vi ->
+        val (_, result) = state.createTask(vi.title, vi.details(), "", vi.dateTimeMillis, false)
+        val whenText = spokenWhen(if (vi.eventMillis > 0) vi.eventMillis else vi.dateTimeMillis)
+        val what = when (vi.kind) {
+            VoiceIntentKind.MEETING -> "${vi.title}, $whenText. Te aviso antes"
+            VoiceIntentKind.TRAVEL -> "${vi.title}, $whenText. Te aviso con tiempo"
+            else -> "${vi.title}, $whenText"
+        }
+        finishVoice(what + if (result == ScheduleResult.APPROXIMATE) " (activa las alarmas exactas)" else "")
+    }
+
+    val openEditorFromVoice: (ReminderDraft) -> Unit = { draft ->
+        editorFromVoice = true
+        taskEditor = TaskEditorRequest(draft = draft)
+    }
+
+    val askMessageByVoice = rememberSpeechInput(
+        "Dime el mensaje que quieres enviar",
+        onCancel = {
+            askingMessage?.let { (vi, c) ->
+                askingMessage = null
+                openEditorFromVoice(
+                    ReminderDraft("Enviar WhatsApp a ${c.displayName}", "", vi.dateTimeMillis, true, c.phoneNumber, c.displayName),
+                )
+            }
+        },
+    ) { said ->
+        val (vi, contact) = askingMessage ?: return@rememberSpeechInput
+        askingMessage = null
+        scope.launch {
+            val msg = if (AiSettings.isEnabled(context)) {
+                thinking = "Redactando el mensaje..."
+                withContext(Dispatchers.IO) {
+                    runCatching { AiAssistant.polishWhatsApp(context, said, contact.displayName) }.getOrDefault(said)
+                }.also { thinking = null }
+            } else said.replaceFirstChar { it.uppercase() }
+            val title = "Enviar WhatsApp a ${contact.displayName}"
+            state.createTask(title, msg, contact.phoneNumber, vi.dateTimeMillis, true)
+            finishVoice("WhatsApp para ${contact.displayName} listo, ${spokenWhen(vi.dateTimeMillis)}")
+        }
     }
 
     val scheduleForContact: (VoiceIntent, SelectedPhoneContact?) -> Unit = { vi, contact ->
@@ -271,37 +337,38 @@ fun AgendaWaApp(
             isWa -> "Enviar WhatsApp a ${contact.displayName}"
             else -> "Llamar a ${contact.displayName}"
         }
-        val draft = ReminderDraft(
-            title = title,
-            message = vi.message,
-            dateTimeMillis = vi.dateTimeMillis,
-            isWhatsApp = isWa,
-            phone = contact?.phoneNumber.orEmpty(),
-            contactName = contact?.displayName,
-        )
-        // Con el contacto claro (y el mensaje, si es WhatsApp) se guarda de una vez
-        if (contact != null && (!isWa || vi.message.isNotBlank()) && vi.dateTimeMillis > System.currentTimeMillis()) {
-            val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis, isWa)
-            val cuando = formatDate(vi.dateTimeMillis, "EEE d MMM, h:mm a")
-            showMessage(
-                (if (isWa) "✅ WhatsApp para ${contact.displayName} listo · $cuando" else "✅ Llamada a ${contact.displayName} · $cuando") +
-                    if (result == ScheduleResult.APPROXIMATE) " (activa las alarmas exactas)" else "",
-            )
-        } else {
-            taskEditor = TaskEditorRequest(draft = draft)
+        when {
+            contact == null -> openEditorFromVoice(ReminderDraft(title, vi.message, vi.dateTimeMillis, isWa))
+            // WhatsApp sin mensaje: se pregunta por voz qué escribirle
+            isWa && vi.message.isBlank() -> {
+                askingMessage = vi to contact
+                showMessage("¿Qué le escribo a ${contact.displayName}?")
+                askMessageByVoice()
+            }
+            else -> {
+                val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis, isWa)
+                val whenText = spokenWhen(vi.dateTimeMillis)
+                finishVoice(
+                    (if (isWa) "WhatsApp para ${contact.displayName} listo, $whenText" else "Llamar a ${contact.displayName}, $whenText") +
+                        if (result == ScheduleResult.APPROXIMATE) " (activa las alarmas exactas)" else "",
+                )
+            }
         }
     }
 
     val resolveContact: (VoiceIntent) -> Unit = { vi ->
         scope.launch {
-            val found = withContext(Dispatchers.IO) { ContactSearch.find(context, vi.personName) }
+            val found = withContext(Dispatchers.IO) { ContactSearch.find(context, vi.personName, state.clients.toList()) }
             when (found.size) {
                 0 -> {
-                    scheduleForContact(vi, null)
                     showMessage("No encontré a \"${vi.personName}\" en tus contactos. Elígelo con el botón de contactos.")
+                    scheduleForContact(vi, null)
                 }
                 1 -> scheduleForContact(vi, found.first())
-                else -> contactChoice = vi to found
+                else -> {
+                    speaker.takeIf { VoicePrefs.speakBack(context) }?.say("Tienes ${found.size} contactos llamados ${vi.personName}. ¿Cuál es?")
+                    contactChoice = vi to found
+                }
             }
         }
     }
@@ -326,25 +393,45 @@ fun AgendaWaApp(
                     contactsPermission.launch(Manifest.permission.READ_CONTACTS)
                 }
             }
-            VoiceIntentKind.REMINDER -> taskEditor = TaskEditorRequest(
-                draft = ReminderDraft(title = vi.title, message = vi.message, dateTimeMillis = vi.dateTimeMillis, isWhatsApp = false),
-            )
+            VoiceIntentKind.MEETING, VoiceIntentKind.TRAVEL, VoiceIntentKind.REMINDER -> saveReminder(vi)
         }
     }
 
-    val startVoiceReminder = rememberSpeechInput("Dime tu idea, a quién llamar o escribir, o qué recordar") { text ->
+    // Procesa la cola de acciones una por una y, al final, confirma todo junto.
+    LaunchedEffect(voiceQueue, voiceBusy) {
+        if (voiceBusy) return@LaunchedEffect
+        if (voiceQueue.isNotEmpty()) {
+            val next = voiceQueue.first()
+            voiceQueue = voiceQueue.drop(1)
+            voiceBusy = true
+            handleVoiceIntent(next)
+        } else if (voiceDone.isNotEmpty()) {
+            val summary = voiceDone.joinToString(". ")
+            voiceDone.clear()
+            showMessage("✅ $summary")
+            if (VoicePrefs.speakBack(context)) speaker.say("Listo. $summary")
+        }
+    }
+
+    val startVoiceReminder = rememberSpeechInput("Dime qué tienes que hacer: llamar, escribir, una reunión, un viaje o una idea") { text ->
         if (AiSettings.isEnabled(context)) {
             thinking = "Entendiendo lo que dijiste..."
             scope.launch {
-                val vi = withContext(Dispatchers.IO) {
-                    runCatching { AiAssistant.parseVoice(context, text) }
-                }
+                val result = withContext(Dispatchers.IO) { runCatching { AiAssistant.parseVoice(context, text) } }
                 thinking = null
-                vi.onFailure { showMessage("IA no disponible (${it.message}). Lo organicé sin IA.") }
-                handleVoiceIntent(vi.getOrElse { LocalIntentParser.parse(text) })
+                result.onFailure { showMessage("IA no disponible (${it.message}). Lo organicé sin IA.") }
+                voiceQueue = voiceQueue + result.getOrElse { listOf(LocalIntentParser.parse(text)) }
             }
         } else {
-            handleVoiceIntent(LocalIntentParser.parse(text))
+            voiceQueue = voiceQueue + LocalIntentParser.parse(text)
+        }
+    }
+
+    // Atajo "Dictar" del ícono de la app: abre el micrófono apenas la app está desbloqueada
+    LaunchedEffect(voiceRequested.value, locked.value) {
+        if (voiceRequested.value && !locked.value) {
+            voiceRequested.value = false
+            startVoiceReminder()
         }
     }
 
@@ -496,10 +583,14 @@ fun AgendaWaApp(
         taskEditor?.let { req ->
             TaskEditorDialog(
                 request = req,
-                onDismiss = { taskEditor = null },
+                onDismiss = {
+                    taskEditor = null
+                    if (editorFromVoice) { editorFromVoice = false; finishVoice(null) }
+                },
                 onSave = { task ->
                     val result = state.saveTask(task)
                     taskEditor = null
+                    if (editorFromVoice) { editorFromVoice = false; finishVoice(null) }
                     showMessage(
                         when (result) {
                             ScheduleResult.EXACT -> "Alarma guardada y activada"

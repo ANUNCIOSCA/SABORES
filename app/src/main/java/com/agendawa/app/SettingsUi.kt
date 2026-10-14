@@ -169,6 +169,7 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
     var apiKey by remember { mutableStateOf(AiSettings.apiKey(context, provider)) }
     var model by remember { mutableStateOf(AiSettings.model(context, provider)) }
     var fallback by remember { mutableStateOf(AiSettings.fallbackEnabled(context)) }
+    var speakBack by remember { mutableStateOf(VoicePrefs.speakBack(context)) }
     var showKey by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -300,6 +301,17 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
                         )
                     }
                     Switch(checked = fallback, onCheckedChange = { fallback = it; AiSettings.setFallback(context, it) })
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Confirmar en voz alta", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Al dictar, la agenda te dice lo que guardó (\"Listo, WhatsApp para Carlos mañana a las 3\").",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = speakBack, onCheckedChange = { speakBack = it; VoicePrefs.setSpeakBack(context, it) })
                 }
 
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))

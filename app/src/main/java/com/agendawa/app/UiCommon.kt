@@ -301,13 +301,12 @@ fun toast(context: Context, text: String) = Toast.makeText(context, text, Toast.
 // ---------------------------------------------------------------------------
 
 @Composable
-fun rememberSpeechInput(prompt: String, onText: (String) -> Unit): () -> Unit {
+fun rememberSpeechInput(prompt: String, onCancel: () -> Unit = {}, onText: (String) -> Unit): () -> Unit {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            if (!text.isNullOrBlank()) onText(text)
-        }
+        val text = if (result.resultCode == Activity.RESULT_OK)
+            result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() else null
+        if (!text.isNullOrBlank()) onText(text) else onCancel()
     }
     return remember(prompt) {
         {
@@ -323,6 +322,7 @@ fun rememberSpeechInput(prompt: String, onText: (String) -> Unit): () -> Unit {
                 launcher.launch(intent)
             } catch (e: ActivityNotFoundException) {
                 toast(context, "Este teléfono no tiene reconocimiento de voz disponible.")
+                onCancel()
             }
         }
     }

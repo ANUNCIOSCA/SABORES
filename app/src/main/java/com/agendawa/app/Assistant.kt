@@ -15,20 +15,36 @@ import java.util.Locale
 // Qué quiso decir el usuario al hablar
 // ---------------------------------------------------------------------------
 
-enum class VoiceIntentKind { IDEA, NOTE, CALL, WHATSAPP, REMINDER }
+enum class VoiceIntentKind { IDEA, NOTE, CALL, WHATSAPP, MEETING, TRAVEL, REMINDER }
 
 data class VoiceIntent(
     val kind: VoiceIntentKind,
     val title: String,
     /** Idea o nota redactada (para IDEA / NOTE). */
     val content: String = "",
-    /** Nombre de la persona a llamar o escribir, tal como se dijo. */
+    /** Nombre de la persona o empresa a llamar o escribir, tal como se dijo. */
     val personName: String = "",
-    /** Mensaje de WhatsApp listo para enviar. */
+    /** Mensaje de WhatsApp listo para enviar, o detalles del recordatorio. */
     val message: String = "",
+    /** Lugar de la reunión o destino del viaje. */
+    val location: String = "",
+    /** Cuándo suena el aviso (en reuniones y viajes, un rato antes). */
     val dateTimeMillis: Long,
+    /** Hora real del evento (reunión o viaje). 0 si no aplica. */
+    val eventMillis: Long = 0L,
     val byAi: Boolean = false,
-)
+) {
+    /** Texto de detalles que se guarda en el recordatorio. */
+    fun details(): String = buildList {
+        if (eventMillis > 0) add("🕒 " + formatDate(eventMillis, "EEEE d 'de' MMMM, h:mm a").replaceFirstChar { it.uppercase() })
+        if (location.isNotBlank()) add("📍 $location")
+        if (message.isNotBlank()) add(message)
+    }.joinToString("\n")
+}
+
+/** Avisos previos por defecto para reuniones y viajes. */
+private const val MEETING_LEAD_MIN = 30L
+private const val TRAVEL_LEAD_MIN = 120L
 
 /** Interpretación sin internet, con reglas. Se usa si no hay IA o si la IA falla. */
 object LocalIntentParser {
@@ -36,16 +52,20 @@ object LocalIntentParser {
     private val noteWords = listOf("anota", "apunta", "toma nota", "guarda una nota", "nota:")
     private val callWords = listOf("llamar", "llamarle", "llamale", "llama a", "llamada")
     private val writeWords = listOf("whatsapp", "wasap", "guasap", "escribir", "escribirle", "escribele", "mensaje", "decirle", "avisarle", "mandarle")
+    private val meetingWords = listOf("reunion", "cita con", "cita en", "junta", "encuentro con", "entrevista", "consulta con", "me reuno", "reunirme")
+    private val travelWords = listOf("viajar", "viaje", "vuelo", "salgo para", "salgo a", "me voy a", "irme a", "bus para", "pasaje")
 
     private val personRegex = Regex(
-        "(?i:llamar(?:le)?|llama|ll[aá]male|escribir(?:le)?|escr[ií]bele|whatsapp|wasap|guasap|mensaje|decirle|avisarle|mandarle)" +
-            "(?i:\\s+(?:un|una|el|al|a|le|por|whatsapp|mensaje))*\\s+(?i:a\\s+|al\\s+)?" +
-            "(\\p{Lu}\\p{L}+(?:\\s+\\p{Lu}\\p{L}+)?)",
+        "(?i:llamar(?:le)?|llama|ll[aá]male|escribir(?:le)?|escr[ií]bele|whatsapp|wasap|guasap|mensaje|decirle|avisarle|mandarle|reuni[oó]n con|cita con|reunirme con|encuentro con)" +
+            "(?i:\\s+(?:un|una|el|al|a|le|la|los|las|por|whatsapp|mensaje|empresa|compañía|señor|señora|sr\\.?|sra\\.?|doctor|doctora|dr\\.?|dra\\.?))*\\s+(?i:a\\s+|al\\s+)?" +
+            "(\\p{Lu}[\\p{L}.&]+(?:\\s+(?:de\\s+)?\\p{Lu}[\\p{L}.&]+)?)",
     )
     private val lowerPersonRegex = Regex(
-        "(?i)(?:llamar(?:le)?|escribir(?:le)?|whatsapp|mensaje|decirle|avisarle)(?:\\s+(?:un|una|el|al|a|le))*\\s+(?:a|al)\\s+(\\p{L}+)",
+        "(?i)(?:llamar(?:le)?|escribir(?:le)?|whatsapp|mensaje|decirle|avisarle|reuni[oó]n|cita)(?:\\s+(?:un|una|el|al|a|le|la))*\\s+(?:a|al|con)\\s+(\\p{L}+)",
     )
-    private val messageRegex = Regex("(?i)\\b(?:que|diciendo que|para decirle que|dile que)\\s+(.+)$")
+    private val messageRegex = Regex("(?i)\\b(?:que|diciendo que|para decirle que|dile que|para)\\s+(.+)$")
+    private val placeRegex = Regex("(?i)\\b(?:en|en el|en la)\\s+((?:el|la|los|las)\\s+)?([\\p{L}0-9][\\p{L}0-9 .,'-]{2,60}?)(?=\\s+(?:a las?|hoy|mañana|pasado|el (?:lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)|con|para)\\b|[.,]|$)")
+    private val destinationRegex = Regex("(?i)\\b(?:a|para|hacia)\\s+(\\p{Lu}[\\p{L}]+(?:\\s+\\p{Lu}[\\p{L}]+)*)")
 
     fun parse(text: String): VoiceIntent {
         val norm = SmartNoteOrganizer.normalize(text)
@@ -54,6 +74,8 @@ object LocalIntentParser {
             ideaWords.any { norm.contains(it) } -> VoiceIntentKind.IDEA
             callWords.any { norm.contains(it) } -> VoiceIntentKind.CALL
             writeWords.any { norm.contains(it) } -> VoiceIntentKind.WHATSAPP
+            meetingWords.any { norm.contains(it) } -> VoiceIntentKind.MEETING
+            travelWords.any { norm.contains(it) } -> VoiceIntentKind.TRAVEL
             noteWords.any { norm.startsWith(it) } -> VoiceIntentKind.NOTE
             else -> VoiceIntentKind.REMINDER
         }
@@ -61,7 +83,7 @@ object LocalIntentParser {
         val person = personMatch?.groupValues?.get(1)?.trim()?.replaceFirstChar { it.uppercase() } ?: ""
         // El mensaje es lo que viene después del nombre ("...a Carlos que mañana le pago")
         val afterPerson = personMatch?.let { text.substring(it.range.last + 1) } ?: text
-        val stopNames = setOf("Mañana", "Hoy", "Pasado", "Que", "Para")
+        val stopNames = setOf("Mañana", "Hoy", "Pasado", "Que", "Para", "En", "A")
         val cleanPerson = person.split(" ").takeWhile { it !in stopNames }.joinToString(" ")
 
         return when (kind) {
@@ -88,6 +110,28 @@ object LocalIntentParser {
                     dateTimeMillis = base.dateTimeMillis,
                 )
             }
+            VoiceIntentKind.MEETING -> {
+                val place = placeRegex.find(text)?.let { (it.groupValues[1] + it.groupValues[2]).trim() }.orEmpty()
+                val withWho = if (cleanPerson.isNotBlank()) " con $cleanPerson" else ""
+                VoiceIntent(
+                    kind,
+                    title = "Reunión$withWho" + if (place.isNotBlank()) " en $place" else "",
+                    personName = cleanPerson,
+                    location = place,
+                    dateTimeMillis = (base.dateTimeMillis - MEETING_LEAD_MIN * 60_000).coerceAtLeast(System.currentTimeMillis() + 60_000),
+                    eventMillis = base.dateTimeMillis,
+                )
+            }
+            VoiceIntentKind.TRAVEL -> {
+                val dest = destinationRegex.find(text)?.groupValues?.get(1)?.trim().orEmpty()
+                VoiceIntent(
+                    kind,
+                    title = if (dest.isNotBlank()) "Viaje a $dest" else "Viaje",
+                    location = dest,
+                    dateTimeMillis = (base.dateTimeMillis - TRAVEL_LEAD_MIN * 60_000).coerceAtLeast(System.currentTimeMillis() + 60_000),
+                    eventMillis = base.dateTimeMillis,
+                )
+            }
             VoiceIntentKind.REMINDER -> VoiceIntent(kind, title = base.title, message = base.message, dateTimeMillis = base.dateTimeMillis)
         }
     }
@@ -97,50 +141,79 @@ object LocalIntentParser {
 object AiAssistant {
     private val isoFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
 
-    fun parseVoice(context: Context, text: String): VoiceIntent {
+    private fun parseTime(value: String): Long? = runCatching {
+        LocalDateTime.parse(value.take(16), isoFormat).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    }.getOrNull()
+
+    /** Una frase puede traer varias cosas: "llamar a Carlos y escribirle a María". */
+    fun parseVoice(context: Context, text: String): List<VoiceIntent> {
         val now = LocalDateTime.now()
         val today = now.format(DateTimeFormatter.ofPattern("EEEE d 'de' MMMM 'de' yyyy, HH:mm", Locale("es")))
         val user = ProfileStore.name(context).ifBlank { "el usuario" }
         val prompt = """
-            Eres el asistente de una agenda en Android. $user acaba de dictar por voz (puede tener errores de dictado):
+            Eres el asistente personal de una agenda en Android, en Venezuela. $user dictó por voz (puede tener errores de
+            dictado, muletillas o nombres mal escritos; interprétalo con sentido común):
             "$text"
 
-            Ahora es $today (hora local de Venezuela).
-            Decide qué quiso hacer y responde SOLO un JSON con estas claves:
-            - "tipo": "idea" (una idea, ocurrencia o proyecto), "nota" (algo para guardar), "llamada" (debe llamar a alguien),
-              "whatsapp" (debe escribirle o enviarle un mensaje a alguien) o "recordatorio" (cualquier otra cosa con hora).
-            - "titulo": título corto y claro (máx. 60 caracteres).
-            - "contenido": solo para idea o nota. Redacta la idea ordenada y bien escrita en español: un resumen de 1-2 frases
-              y luego viñetas con los puntos clave y próximos pasos concretos. No inventes datos que no se dijeron.
-            - "persona": nombre de la persona a llamar o escribir, tal como lo dijo (ej. "Carlos"). Vacío si no hay.
-            - "mensaje": para whatsapp, el mensaje listo para enviar, escrito en primera persona, cálido y natural,
-              en español venezolano, sin saludos exagerados. Para llamada, de qué debe hablar. Vacío en otro caso.
-            - "fecha_hora": cuándo debe sonar el aviso en formato yyyy-MM-ddTHH:mm. Si no dijo hora para una llamada,
-              whatsapp o recordatorio, usa dentro de 1 hora. Para idea o nota, vacío.
+            Ahora es $today.
+            Una sola frase puede traer VARIAS cosas por hacer. Responde SOLO un JSON así:
+            {"acciones": [ { ...acción... }, ... ]}
+
+            Cada acción tiene:
+            - "tipo": uno de
+                "idea"         → una idea, ocurrencia, negocio o proyecto ("tengo una idea...", "se me ocurrió...")
+                "nota"         → algo para guardar sin hora ("anota que...", datos, listas)
+                "llamada"      → debe llamar a una persona o empresa
+                "whatsapp"     → debe escribirle, mandarle un mensaje o avisarle algo a una persona o empresa
+                "reunion"      → reunión, cita, consulta médica, entrevista, encuentro en un sitio
+                "viaje"        → viajar, vuelo, salir hacia otra ciudad
+                "recordatorio" → cualquier otra cosa con fecha u hora (pagos, comprar algo, tomar medicina...)
+            - "titulo": título corto y claro (máx. 60 caracteres), por ejemplo "Reunión con el contador en Banesco".
+            - "contenido": solo idea o nota. Redáctala ordenada: resumen de 1-2 frases y luego viñetas con puntos clave
+              y próximos pasos concretos. No inventes datos.
+            - "persona": persona o empresa a llamar, escribir o con quien se reúne, tal como la dijo ("Carlos",
+              "Carlos Pérez", "Farmatodo"). Sin artículos ni títulos ("la empresa", "el señor"). Vacío si no hay.
+            - "mensaje": en whatsapp, el mensaje listo para enviar en primera persona, cálido, breve y natural en español
+              venezolano (sin "Estimado"). Si no dijo qué escribir, déjalo vacío. En llamada: de qué hablar.
+              En recordatorio, reunión o viaje: detalles útiles que dijo (qué llevar, número de vuelo...).
+            - "lugar": sitio de la reunión o destino del viaje. Vacío si no se dijo.
+            - "fecha_hora": cuándo ocurre (yyyy-MM-ddTHH:mm). "En la mañana" = 09:00, "al mediodía" = 12:00,
+              "en la tarde" = 15:00, "en la noche" = 19:00. Si dijo "a las 3" sin aclarar, es 15:00.
+              Si no dijo cuándo: dentro de 1 hora. Para idea o nota: vacío.
+            - "aviso_minutos_antes": minutos antes de "fecha_hora" para avisar. 0 para llamada, whatsapp y recordatorio;
+              30 para reunión; 120 para viaje (o lo que pida: "avísame una hora antes" = 60).
         """.trimIndent()
 
-        val o = JSONObject(AiClient.extractJson(AiClient.generate(context, prompt, json = true)))
-        val kind = when (o.optString("tipo").lowercase(Locale.ROOT)) {
-            "idea" -> VoiceIntentKind.IDEA
-            "nota" -> VoiceIntentKind.NOTE
-            "llamada" -> VoiceIntentKind.CALL
-            "whatsapp" -> VoiceIntentKind.WHATSAPP
-            else -> VoiceIntentKind.REMINDER
-        }
-        val millis = runCatching {
-            val dt = LocalDateTime.parse(o.optString("fecha_hora").take(16), isoFormat)
-            dt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        }.getOrNull()?.takeIf { it > System.currentTimeMillis() } ?: VoiceParser.parse(text).dateTimeMillis
-
-        return VoiceIntent(
-            kind = kind,
-            title = o.optString("titulo").ifBlank { text.take(60) },
-            content = o.optString("contenido"),
-            personName = o.optString("persona").trim(),
-            message = o.optString("mensaje").trim(),
-            dateTimeMillis = millis,
-            byAi = true,
-        )
+        val root = JSONObject(AiClient.extractJson(AiClient.generate(context, prompt, json = true)))
+        val arr = root.optJSONArray("acciones") ?: org.json.JSONArray().put(root)
+        val fallbackMillis = VoiceParser.parse(text).dateTimeMillis
+        val minFuture = System.currentTimeMillis() + 60_000
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val kind = when (SmartNoteOrganizer.normalize(o.optString("tipo"))) {
+                "idea" -> VoiceIntentKind.IDEA
+                "nota" -> VoiceIntentKind.NOTE
+                "llamada" -> VoiceIntentKind.CALL
+                "whatsapp" -> VoiceIntentKind.WHATSAPP
+                "reunion" -> VoiceIntentKind.MEETING
+                "viaje" -> VoiceIntentKind.TRAVEL
+                else -> VoiceIntentKind.REMINDER
+            }
+            val event = parseTime(o.optString("fecha_hora"))?.takeIf { it > System.currentTimeMillis() } ?: fallbackMillis
+            val lead = o.optLong("aviso_minutos_antes", 0L).coerceIn(0L, 7 * 24 * 60L)
+            val isEvent = kind == VoiceIntentKind.MEETING || kind == VoiceIntentKind.TRAVEL
+            VoiceIntent(
+                kind = kind,
+                title = o.optString("titulo").ifBlank { text.take(60) },
+                content = o.optString("contenido"),
+                personName = o.optString("persona").trim(),
+                message = o.optString("mensaje").trim(),
+                location = o.optString("lugar").trim(),
+                dateTimeMillis = (event - lead * 60_000).coerceAtLeast(minFuture),
+                eventMillis = if (isEvent || lead > 0) event else 0L,
+                byAi = true,
+            )
+        }.ifEmpty { listOf(LocalIntentParser.parse(text)) }
     }
 
     /** Redacta y ordena una idea o nota escrita a la carrera. */
@@ -180,12 +253,23 @@ object ContactSearch {
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
-    /** Todos los contactos con teléfono cuyo nombre contiene [name]. Sin duplicados por número. */
-    fun find(context: Context, name: String): List<SelectedPhoneContact> {
-        if (name.isBlank() || !hasPermission(context)) return emptyList()
+    /**
+     * Contactos del teléfono y clientes de la agenda (por nombre o empresa) que coinciden con [name].
+     * Sin duplicados por número.
+     */
+    fun find(context: Context, name: String, clients: List<Client> = emptyList()): List<SelectedPhoneContact> {
         val words = SmartNoteOrganizer.normalize(name).split(" ").filter { it.length >= 2 }
         if (words.isEmpty()) return emptyList()
         val result = linkedMapOf<String, SelectedPhoneContact>()
+        clients.filter { it.phone.isNotBlank() }.forEach { cl ->
+            val hay = SmartNoteOrganizer.normalize("${cl.name} ${cl.company}")
+            if (words.all { hay.contains(it) }) {
+                val digits = cl.phone.filter { it.isDigit() }.takeLast(10)
+                val label = if (cl.company.isNotBlank()) "${cl.name} (${cl.company})" else cl.name
+                if (digits.isNotEmpty() && digits !in result) result[digits] = SelectedPhoneContact(label, cl.phone)
+            }
+        }
+        if (!hasPermission(context)) return result.values.toList()
         runCatching {
             context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,

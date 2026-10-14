@@ -204,7 +204,7 @@ fun VoiceHero(onVoice: () -> Unit) {
                     Text("Organiza tu día hablando o escribiendo.", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Ejemplo: mañana a las 9, enviar un WhatsApp a Carlos",
+                        "Ej.: \"Escríbele a Carlos que mañana le pago y tengo reunión el viernes a las 10 en la oficina\"",
                         color = Color.White.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.bodySmall,
                     )

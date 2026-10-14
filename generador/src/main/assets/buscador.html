@@ -121,6 +121,7 @@
     <div class="header">
         <button class="icon-btn" id="backBtn" aria-label="Volver al generador">&#8592;</button>
         <h1>Buscar noticias</h1>
+        <button class="icon-btn" id="savedBtn" aria-label="Guardados" style="width:auto;padding:0 12px;border-radius:19px;font-size:15px">☆</button>
         <button class="icon-btn" id="settingsBtn" aria-label="Configurar IA">&#9881;</button>
     </div>
 
@@ -149,6 +150,18 @@
         <div id="bgBanner"><img alt=""><span></span><button class="btn btn-small btn-light" id="bgClear">Quitar</button></div>
         <div class="status" id="status"></div>
         <div id="results" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- Copys y notas guardados -->
+    <div class="modal-bg" id="savedModal">
+        <div class="modal">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <h2 style="flex:1;margin:0">Guardados</h2>
+                <button class="btn btn-light btn-small" id="closeSaved">Cerrar</button>
+            </div>
+            <div class="hint">Copys de Instagram y notas para la web que guardaste. Se quedan en este teléfono.</div>
+            <div id="savedList"></div>
+        </div>
     </div>
 
     <!-- Configuración de IA -->
@@ -848,7 +861,7 @@ async function aiWrite(card, g, deep) {
             readInfo = 'Armado sin IA a partir del titular' + (articles.length ? ' y la nota de ' + articles[0].item.source : '') +
                 '. Ajusta el texto a tu gusto. Con una clave de Gemini o Groq (⚙) te propone 4 ángulos al estilo R24.';
         }
-        renderDraft(box, card, g, deep, r, readInfo);
+        renderDraft(box, card, g, deep, r, readInfo, articles);
     } catch (e) {
         box.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
     }
@@ -893,7 +906,7 @@ function localDraft(g, articles) {
     };
 }
 
-function renderDraft(box, card, g, deep, r, readInfo) {
+function renderDraft(box, card, g, deep, r, readInfo, articles) {
         var versions = (r.versiones || []).filter(function (v) { return v && (v.linea1 || v.subtitulo); });
         if (!versions.length) throw new Error('La IA no devolvió versiones. Toca "Otra versión".');
         var list = function (arr) { return (arr || []).length ? '<ul>' + arr.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<div class="hint">—</div>'; };
@@ -920,9 +933,16 @@ function renderDraft(box, card, g, deep, r, readInfo) {
             '<h4>Datos clave</h4>' + list(r.datos_clave) +
             (r.contraste ? '<h4>Qué dicen los medios</h4><div>' + esc(r.contraste) + '</div>' : '') +
             '<h4>Verificar antes de publicar</h4>' + list(r.verificar) +
-            (r.copy ? '<h4>Copy para Instagram</h4><div style="white-space:pre-wrap">' + esc(r.copy) + '</div>' +
-                '<div class="hint" style="margin-top:4px">' + esc(hashtags.join(' ')) + '</div>' +
-                '<div class="actions"><button class="btn btn-small btn-light" data-act="copy">Copiar copy y hashtags</button></div>' : '');
+            '<h4>Copy para Instagram</h4>' +
+            '<textarea class="ed" data-f="copy" rows="9"></textarea>' +
+            '<div class="actions">' +
+            '<button class="btn btn-small" data-c="ig-save">Guardar</button>' +
+            '<button class="btn btn-small btn-light" data-c="ig-redo">Rehacer</button>' +
+            '<button class="btn btn-small btn-light" data-c="ig-copy">Copiar</button>' +
+            '<button class="btn btn-small btn-light" data-c="ig-share">Compartir</button></div>' +
+            '<h4>Nota para la web</h4>' +
+            '<div data-web><div class="hint">Nota de 300-500 palabras al estilo R24 con su ficha (titular SEO, meta descripción, extracto, categoría y etiquetas).</div>' +
+            '<div class="actions"><button class="btn btn-small btn-red" data-c="web-make">Redactar nota para la web</button></div></div>';
 
         var cats = ['NACIONAL', 'ECONOMÍA', 'POLÍTICA', 'DEPORTE', 'INTERNACIONAL'];
         var cat = cats.indexOf((r.categoria || '').toUpperCase()) >= 0 ? r.categoria.toUpperCase() : state.cat;
@@ -964,8 +984,176 @@ function renderDraft(box, card, g, deep, r, readInfo) {
             useInTemplate(t, val('sub'), cat, val('tag'));
         };
         box.querySelector('[data-act="again"]').onclick = function () { box.remove(); aiWrite(card, g, deep); };
-        var copyBtn = box.querySelector('[data-act="copy"]');
-        if (copyBtn) copyBtn.onclick = function () { copyText(r.copy + '\n\n' + hashtags.join(' ')); copyBtn.textContent = 'Copiado'; };
+        // ----- Copy de Instagram: editable, guardar, rehacer, copiar, compartir -----
+        var copyBox = field('copy');
+        copyBox.value = r.copy ? (plain(r.copy) + (hashtags.length ? '\n\n' + hashtags.join(' ') : '')) : localCopy(val, g);
+        var flash = function (btn, txt) { var old = btn.textContent; btn.textContent = txt; setTimeout(function () { btn.textContent = old; }, 1500); };
+        var currentTitle = function () { return [val('l1'), val('l2')].filter(Boolean).join(' ') || g.title; };
+        box.querySelector('[data-c="ig-copy"]').onclick = function () { copyText(copyBox.value); flash(this, 'Copiado'); };
+        box.querySelector('[data-c="ig-share"]').onclick = function () { shareText(copyBox.value); };
+        box.querySelector('[data-c="ig-save"]').onclick = function () { saveItem('Instagram', currentTitle(), copyBox.value); flash(this, 'Guardado'); };
+        box.querySelector('[data-c="ig-redo"]').onclick = async function () {
+            var btn = this;
+            if (!aiProviders().length) { copyBox.value = localCopy(val, g); flash(btn, 'Rehecho'); return; }
+            btn.disabled = true; btn.textContent = 'Redactando...';
+            try {
+                var c = await aiCall(buildCopyPrompt(g, articles, val, copyBox.value));
+                var tags = (c.hashtags || []).map(function (h) { h = String(h).trim(); return h.charAt(0) === '#' ? h : '#' + h.replace(/\s+/g, ''); });
+                copyBox.value = plain(c.copy || '') + (tags.length ? '\n\n' + tags.join(' ') : '');
+            } catch (e) { alertMsg(box, e.message); }
+            btn.disabled = false; btn.textContent = 'Rehacer';
+        };
+
+        // ----- Nota para la web -----
+        var webBox = box.querySelector('[data-web]');
+        var makeWeb = async function () {
+            if (!aiProviders().length) { alertMsg(box, 'La nota para la web necesita una clave de Gemini o Groq (botón ⚙ arriba).'); return; }
+            var prev = webBox.querySelector('textarea') ? webBox.querySelector('textarea').value : '';
+            webBox.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Redactando la nota para la web...';
+            try {
+                var w = await aiCall(buildWebPrompt(g, articles, val, prev));
+                var text = formatWeb(w);
+                webBox.innerHTML = '<textarea class="ed" data-f="web" rows="16"></textarea>' +
+                    '<div class="actions"><button class="btn btn-small" data-c="web-save">Guardar</button>' +
+                    '<button class="btn btn-small btn-light" data-c="web-redo">Rehacer</button>' +
+                    '<button class="btn btn-small btn-light" data-c="web-copy">Copiar</button>' +
+                    '<button class="btn btn-small btn-light" data-c="web-share">Compartir</button></div>';
+                var t = webBox.querySelector('textarea');
+                t.value = text;
+                webBox.querySelector('[data-c="web-copy"]').onclick = function () { copyText(t.value); flash(this, 'Copiado'); };
+                webBox.querySelector('[data-c="web-share"]').onclick = function () { shareText(t.value); };
+                webBox.querySelector('[data-c="web-save"]').onclick = function () { saveItem('Web', w.titular || currentTitle(), t.value); flash(this, 'Guardado'); };
+                webBox.querySelector('[data-c="web-redo"]').onclick = makeWeb;
+            } catch (e) {
+                webBox.innerHTML = '<div class="err">' + esc(e.message) + '</div><div class="actions"><button class="btn btn-small btn-red" data-c="web-make">Intentar de nuevo</button></div>';
+                webBox.querySelector('[data-c="web-make"]').onclick = makeWeb;
+            }
+        };
+        box.querySelector('[data-c="web-make"]').onclick = makeWeb;
+}
+
+// ---------- copy, nota web y guardados ----------
+function alertMsg(box, msg) {
+    var e = document.createElement('div'); e.className = 'err'; e.textContent = msg; box.appendChild(e);
+    setTimeout(function () { e.remove(); }, 6000);
+}
+
+function shareText(t) {
+    if (window.R24Android && window.R24Android.shareText) window.R24Android.shareText(t);
+    else copyText(t);
+}
+
+function sourcesBlock(g, articles) {
+    var lines = g.items.slice(0, 8).map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; }).join('\n');
+    var full = (articles || []).map(function (r) {
+        return '### ' + r.item.source + '\n' + (r.art.description ? r.art.description + '\n' : '') + r.art.text.slice(0, 3000);
+    }).join('\n\n');
+    return 'TITULARES:\n' + lines + (full ? '\n\nTEXTO DE LAS NOTAS (fuente principal):\n' + full : '\n\n(Sin texto completo: usa solo los titulares.)');
+}
+
+function placaBlock(val) {
+    return 'PLACA ELEGIDA: franja "' + val('tag') + '" · título "' + val('l1') + ' ' + val('l2') + '" · subtítulo "' + plain(val('sub')) + '"';
+}
+
+// Copy sin IA: arma un texto base con la placa y lo deja para ajustar
+function localCopy(val, g) {
+    var t = [val('l1'), val('l2')].filter(Boolean).join(' ');
+    var topic = (TOPICS.find(function (x) { return x.q === state.query; }) || { label: state.query }).label;
+    return (val('tag') ? val('tag') + ' | ' : '') + t + '\n\n' + plain(val('sub')) +
+        '\n\nFuente: ' + g.items[0].source + '.\n\n¿Qué opinas? Te leemos en los comentarios.\n\n' +
+        '#Reportalo24 #Venezuela #Noticias #' + norm(topic).replace(/\s+/g, '') + ' #UltimaHora';
+}
+
+function buildCopyPrompt(g, articles, val, previous) {
+    return [
+        R24_GUIDE, '',
+        sourcesBlock(g, articles), '',
+        placaBlock(val), '',
+        'Escribe un copy NUEVO para Instagram de 80-150 palabras que acompañe esa placa: gancho fuerte en la primera línea,',
+        'el dato que duele atribuido, contexto breve y cierre con pregunta o señalamiento. Tono R24, humanizado, sin inventar.',
+        'Debe ser distinto de este anterior:', '«' + previous.slice(0, 1500) + '»', '',
+        'Responde SOLO un JSON: {"copy": "...", "hashtags": ["5 virales", "5 de nicho"]}'
+    ].join('\n');
+}
+
+function buildWebPrompt(g, articles, val, previous) {
+    return [
+        R24_GUIDE, '',
+        sourcesBlock(g, articles), '',
+        placaBlock(val), '',
+        'Escribe la NOTA PARA EL PORTAL web de Repórtalo 24 sobre esta historia, tono amarillista y crítico de principio a fin,',
+        'con los hechos intactos y cada dato atribuido. Pirámide invertida:',
+        '1) Entrada (1-2 párrafos): qué, quién, dónde, cuándo y el dato que duele; las 5W en las primeras 60 palabras.',
+        '2) Desarrollo: testimonios, cifras y contexto, todo atribuido; si hay cita directa en las notas, úsala.',
+        '3) Contraste: la promesa, la historia o el dato oficial que choca con la realidad, en boca de quien lo dijo.',
+        '4) Cierre: qué sigue y quién tiene que responder; si no hay respuesta oficial, dilo. Sin moraleja inventada.',
+        'Párrafos de 2-4 líneas, frases cortas, 300-500 palabras. Sin asteriscos ni marcas de formato.',
+        previous ? 'Debe ser una versión distinta de la anterior (cambia la entrada y el enfoque).' : '', '',
+        'Responde SOLO un JSON:',
+        '{"titular": "MAYÚSCULAS, máx. 70 caracteres, con el lugar", "nota": "párrafos separados por \\n\\n",',
+        ' "titular_seo": "máx. 60 caracteres", "meta_descripcion": "máx. 155 caracteres", "extracto": "1-2 frases",',
+        ' "categoria": "una sola", "estado": "estado de Venezuela si aplica", "etiquetas": ["5-8"],',
+        ' "imagen": "qué foto usar y pie de foto con crédito"}'
+    ].join('\n');
+}
+
+function formatWeb(w) {
+    return [
+        plain(w.titular || '').toUpperCase(), '',
+        plain(w.nota || ''), '',
+        '— FICHA DE PUBLICACIÓN —',
+        'Titular SEO: ' + plain(w.titular_seo || ''),
+        'Meta descripción: ' + plain(w.meta_descripcion || ''),
+        'Extracto: ' + plain(w.extracto || ''),
+        'Categoría: ' + (w.categoria || ''),
+        (w.estado ? 'Estado: ' + w.estado : ''),
+        'Etiquetas: ' + (w.etiquetas || []).join(', '),
+        'Imagen destacada: ' + plain(w.imagen || ''),
+        'Firma: Camila de Reportalo 24'
+    ].filter(function (x, i, a) { return x !== '' || (a[i - 1] !== ''); }).join('\n');
+}
+
+function savedItems() { return load('r24_saved', []); }
+function saveItem(type, title, text) {
+    var list = savedItems();
+    list.unshift({ id: Date.now(), type: type, title: title, text: text, date: Date.now() });
+    save('r24_saved', list.slice(0, 200));
+    updateSavedCount();
+}
+function updateSavedCount() {
+    var n = savedItems().length;
+    document.getElementById('savedBtn').textContent = n ? '★ ' + n : '☆';
+}
+function openSaved() {
+    var box = document.getElementById('savedList');
+    var list = savedItems();
+    box.innerHTML = list.length ? '' : '<div class="hint">Todavía no has guardado copys ni notas. Usa "Guardar" en el panel de redacción.</div>';
+    list.forEach(function (it) {
+        var el = document.createElement('div');
+        el.className = 'card';
+        el.style.marginBottom = '8px';
+        el.innerHTML = '<div class="meta"><span class="badge' + (it.type === 'Web' ? ' hot' : '') + '">' + esc(it.type) + '</span>' +
+            '<span>' + new Date(it.date).toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</span></div>' +
+            '<h3 style="font-size:15px">' + esc(it.title) + '</h3>' +
+            '<textarea class="ed" rows="6" style="width:100%;padding:8px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px"></textarea>' +
+            '<div class="actions"><button class="btn btn-small" data-s="copy">Copiar</button>' +
+            '<button class="btn btn-small btn-light" data-s="share">Compartir</button>' +
+            '<button class="btn btn-small btn-light" data-s="upd">Guardar cambios</button>' +
+            '<button class="btn btn-small btn-light" data-s="del">Borrar</button></div>';
+        var t = el.querySelector('textarea'); t.value = it.text;
+        el.querySelector('[data-s="copy"]').onclick = function () { copyText(t.value); this.textContent = 'Copiado'; };
+        el.querySelector('[data-s="share"]').onclick = function () { shareText(t.value); };
+        el.querySelector('[data-s="upd"]').onclick = function () {
+            save('r24_saved', savedItems().map(function (x) { if (x.id === it.id) x.text = t.value; return x; }));
+            this.textContent = 'Guardado';
+        };
+        el.querySelector('[data-s="del"]').onclick = function () {
+            save('r24_saved', savedItems().filter(function (x) { return x.id !== it.id; }));
+            updateSavedCount(); openSaved();
+        };
+        box.appendChild(el);
+    });
+    document.getElementById('savedModal').classList.add('show');
 }
 
 // ---------- temas rastreados ----------
@@ -1025,6 +1213,8 @@ function drawFilters() {
     });
 }
 
+document.getElementById('savedBtn').onclick = openSaved;
+document.getElementById('closeSaved').onclick = function () { document.getElementById('savedModal').classList.remove('show'); };
 document.getElementById('bgClear').onclick = function () { chosenBg = null; showBgBanner(); };
 document.getElementById('searchBtn').onclick = function () { state.query = ''; search(); };
 document.getElementById('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { state.query = ''; search(); } });
@@ -1063,6 +1253,7 @@ state.mode = load('r24_mode', 'all');
 state.query = 'Venezuela';
 drawFilters();
 refreshTracked();
+updateSavedCount();
 search();
 </script>
 </body>

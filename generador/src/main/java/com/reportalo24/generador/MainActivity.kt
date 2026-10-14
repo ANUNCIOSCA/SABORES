@@ -358,6 +358,18 @@ class MainActivity : ComponentActivity() {
             return data
         }
 
+        /** Abre el menú de compartir de Android (WhatsApp, Instagram, notas...) con el texto. */
+        @JavascriptInterface
+        fun shareText(text: String) {
+            runOnUiThread {
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, text)
+                }
+                runCatching { startActivity(android.content.Intent.createChooser(send, "Compartir")) }
+            }
+        }
+
         /** Copia texto (copy de Instagram, hashtags) al portapapeles. */
         @JavascriptInterface
         fun copyText(text: String) {

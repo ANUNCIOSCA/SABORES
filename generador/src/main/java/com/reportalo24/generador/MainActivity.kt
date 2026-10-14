@@ -32,6 +32,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.Effects
@@ -167,7 +168,7 @@ class MainActivity : ComponentActivity() {
             listOf(),
             listOf(
                 Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP),
-                OverlayEffect(ImmutableList.of(BitmapOverlay.createStaticBitmapOverlay(overlay)))
+                OverlayEffect(ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(overlay)))
             )
         )
         val item = EditedMediaItem.Builder(MediaItem.fromUri(uri)).setEffects(effects).build()

@@ -276,6 +276,16 @@ class MainActivity : ComponentActivity() {
             }.start()
         }
 
+        /** Copia texto (copy de Instagram, hashtags) al portapapeles. */
+        @JavascriptInterface
+        fun copyText(text: String) {
+            runOnUiThread {
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Repórtalo 24", text))
+                Toast.makeText(this@MainActivity, "Copiado", Toast.LENGTH_SHORT).show()
+            }
+        }
+
         /** Abre un enlace (la noticia original) en el navegador del teléfono. */
         @JavascriptInterface
         fun openUrl(url: String) {

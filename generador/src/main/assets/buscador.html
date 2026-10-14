@@ -66,6 +66,12 @@
         .preview-sub { margin-top: 6px; font-size: 14px; }
         .preview-sub .red { color: #d61f2c; font-weight: 700; }
         .err { color: #c0392b; font-size: 13px; margin-top: 8px; }
+        .redline { background: #fdecea; border-left: 4px solid #d61f2c; border-radius: 8px; padding: 8px 10px; margin: 6px 0; font-size: 13px; color: #8a1c14; }
+        .chip[class*="ver-"]::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: #1a8b8b; }
+        .chip.ver-amarillista::before { background: #f1c40f; }
+        .chip.ver-abandono::before { background: #333; }
+        .chip.ver-critico::before { background: #d61f2c; }
+        .chip.ver-perspectiva::before { background: #8e44ad; }
         .ai-box .ed { width: 100%; padding: 10px; border: 2px solid #d6eaea; border-radius: 8px; font-size: 15px; font-family: inherit; margin-bottom: 4px; }
         .ai-box .ed:focus { outline: none; border-color: #1a8b8b; }
         .ai-box .ed[data-f="l1"], .ai-box .ed[data-f="l2"], .ai-box .ed[data-f="tag"] { text-transform: uppercase; font-weight: 800; }
@@ -569,37 +575,81 @@ async function aiCall(prompt) {
     throw lastErr || new Error('No se pudo usar la IA');
 }
 
+// Manual de estilo de Repórtalo 24 (resumen del documento "Noticias Especialistas", Módulo A y línea roja)
+var R24_GUIDE = [
+    'Eres el editor de mesa de Repórtalo 24 (@reportalo24), medio digital venezolano de DENUNCIA, no una agencia de cables.',
+    'Escribes como cronista-analista con sangre en el ojo: indignación, dramatismo de la consecuencia real, ironía controlada',
+    'y señalamiento de responsables institucionales. Nunca una versión tibia. EL ADJETIVO ES LIBRE; EL DATO ES SAGRADO.',
+    '',
+    'DIAGRAMACIÓN DE LA PLACA (orden fijo: franja → título → subtítulo):',
+    '- FRANJA ROJA: el tema, en MAYÚSCULAS, 18-20 caracteres contando espacios (ej. "OLVIDO EN EL GUÁRICO").',
+    '- TÍTULO: la sentencia emocional, 4-8 palabras, MAYÚSCULAS, con el lugar dentro. Juzga, no describe. No repite la franja.',
+    '  Se reparte en 2 líneas cortas y equilibradas (máx. ~22 caracteres cada una).',
+    '- SUBTÍTULO: EL DATO QUE DUELE, con cifra o fecha ATRIBUIDA ("según…", "denuncian vecinos…"). No parafrasea el título.',
+    '  Envuelve UNA frase clave en **dobles asteriscos** (sale en rojo).',
+    '',
+    'EL DATO QUE DUELE: busca el contraste entre lo que el lugar o la persona es o fue y la desgracia de hoy:',
+    'vocación productiva, volumen humano, promesa incumplida (quién, cuándo, cuánto), pasado glorioso, tiempo acumulado',
+    '("doce años esperando" es titular), consecuencia concreta.',
+    '',
+    'ESCALAR EL SUJETO (el titular habla de la gente, no del bache): objeto < lugar < gentilicio ("Guariqueños viajan con miedo")',
+    '< estado ("Guárico en peligro"). Solo se escala si el caso es representativo, nunca un hecho aislado.',
+    'Fórmulas: "[LUGAR] en el olvido" · "El pueblo que [contraste]" · "[X] años esperando [Y]" · "Aquí [consecuencia brutal]" ·',
+    '"Prometieron [X]. Hoy [Y]." · "Nadie responde por [X]".',
+    '',
+    'LÍNEA ROJA (nunca se rompe):',
+    '- Nunca inventar cifras, porcentajes, muertos, heridos, montos ni nombres. Solo lo que está en las notas.',
+    '- Nunca atribuir un delito no probado a una persona con nombre y apellido: "señalado por", "denuncian que".',
+    '- Nunca "URGENTE" ni "ÚLTIMA HORA" para un hecho que no es de las últimas horas (mira la antigüedad de cada nota).',
+    '- Nunca morbo con cadáveres, menores o víctimas identificables. Nunca datos personales de particulares.',
+    '- Distinguir gobierno de pueblo. Denunciar, no incitar a la violencia.',
+    '- Toda cifra oficial va en boca de quien la dijo ("según la propia Gobernación…").',
+    '- Si dos medios se contradicen, se dice. Lo no confirmado va atribuido o fuera.',
+    '',
+    'HUMANIZADO AL 100%: nada de "cabe destacar", "es importante señalar", "en el panorama actual", "no es solo X, es Y",',
+    'listas de tres forzadas ni moralejas. Frases cortas, vivas, con ritmo irregular.'
+].join('\n');
+
 function buildPrompt(g, deep, articles) {
-    var lines = g.items.map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; });
-    var full = (articles || []).map(function (r) {
-        return '### ' + r.item.source + ' — ' + r.item.title + '\n' + (r.art.description ? r.art.description + '\n' : '') + r.art.text.slice(0, 3500);
-    });
+    var lines = g.items.map(function (i) { return '- [' + i.source + ', publicado ' + timeAgo(i.date) + '] ' + i.title; });
     var rel = (deep && g.related ? g.related : []).map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; });
+    var full = (articles || []).map(function (r) {
+        return '### ' + r.item.source + ' (' + timeAgo(r.item.date) + ') — ' + r.item.title + '\n' +
+            (r.art.description ? r.art.description + '\n' : '') + r.art.text.slice(0, 3500);
+    });
     return [
-        'Eres el editor jefe de Repórtalo 24 (@reportalo24), medio digital venezolano. Estilo: directo, de alto impacto,',
-        'que detiene el scroll en Instagram y WhatsApp, con filo crítico, PERO sin inventar, exagerar ni afirmar lo que',
-        'los titulares no dicen. Si algo no está confirmado, dilo.',
+        R24_GUIDE,
         '',
-        'Titulares de distintos medios sobre la misma historia:',
+        'Hoy es ' + new Date().toLocaleString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + '.',
+        '',
+        'TITULARES DE LOS MEDIOS SOBRE ESTA HISTORIA:',
         lines.join('\n'),
-        rel.length ? '\nCobertura relacionada de los últimos 7 días (antecedentes y seguimiento):\n' + rel.slice(0, 25).join('\n') : '',
-        full.length ? '\nTEXTO COMPLETO DE LAS NOTAS (tu fuente principal: saca de aquí cifras, nombres, lugares y declaraciones):\n' + full.join('\n\n') : '',
+        rel.length ? '\nCOBERTURA RELACIONADA (7 días, antecedentes y seguimiento):\n' + rel.slice(0, 25).join('\n') : '',
+        full.length ? '\nTEXTO COMPLETO DE LAS NOTAS (fuente principal: de aquí salen cifras, nombres, lugares y declaraciones):\n' + full.join('\n\n')
+            : '\n(No hay texto completo: trabaja SOLO con los titulares y sé prudente con los datos.)',
         '',
-        'La pieza es una placa de Instagram/WhatsApp con: FRANJA ROJA arriba (una etiqueta corta), TÍTULO grande en 2 líneas',
-        'y SUBTÍTULO debajo. El título debe llevar el hecho más fuerte y el subtítulo el dato concreto que lo sostiene.',
+        'Entrega CUATRO versiones de la placa, nunca neutrales:',
+        '1. "amarillista": miedo / riesgo (terror, riesgo de muerte, trampa mortal).',
+        '2. "abandono": olvido / desamparo (tierra de nadie, nadie viene).',
+        '3. "critico": responsabilidad; nombra al responsable institucional o contrasta promesa vs. realidad con fecha. Ironía por yuxtaposición, nunca insulto.',
+        '4. "perspectiva": la que tú publicarías, con "por_que" (1-2 líneas sobre la emoción o sesgo que activa).',
         '',
-        'Responde SOLO un JSON con:',
+        'Responde SOLO un JSON:',
         '{',
-        ' "linea1": "primera línea del título, MAYÚSCULAS, máx. 22 caracteres",',
-        ' "linea2": "segunda línea del título, MAYÚSCULAS, máx. 22 caracteres",',
-        ' "subtitulo": "máx. 200 caracteres con el dato que más duele; envuelve UNA frase clave en **dobles asteriscos**",',
+        ' "dato_que_duele": "el contraste que hace la historia peor de lo que parece, con su fuente",',
+        ' "versiones": [',
+        '   {"tipo": "amarillista", "franja": "...", "linea1": "...", "linea2": "...", "subtitulo": "..."},',
+        '   {"tipo": "abandono", ...}, {"tipo": "critico", ...},',
+        '   {"tipo": "perspectiva", "franja": "...", "linea1": "...", "linea2": "...", "subtitulo": "...", "por_que": "..."}',
+        ' ],',
         ' "categoria": "NACIONAL | ECONOMÍA | POLÍTICA | DEPORTE | INTERNACIONAL",',
-        ' "etiqueta": "FRANJA ROJA: máx. 18 caracteres en MAYÚSCULAS que diga de qué va (ej. ÚLTIMA HORA, SUCESOS, ALERTA, DÓLAR HOY, GUÁRICO)",',
-        ' "resumen": "3-4 frases con lo que se sabe",',
-        ' "datos_clave": ["cifras, nombres, lugares y fechas que aparecen"],',
+        ' "resumen": "3-4 frases con lo que se sabe, cada dato atribuido",',
+        ' "datos_clave": ["cifra/nombre/lugar/fecha — según quién"],',
         ' "contraste": "en qué coinciden y en qué difieren los medios (vacío si solo hay uno)",',
         ' "verificar": ["lo que falta confirmar antes de publicar"],',
-        ' "alternativas": ["otros 2 títulos posibles de una línea"]',
+        ' "alertas_linea_roja": ["riesgos de esta historia: menores, nombres sin prueba, hecho viejo, cifras sin fuente… (vacío si no hay)"],',
+        ' "copy": "copy para Instagram de 80-150 palabras, gancho en la primera línea, mismo tono R24, datos atribuidos",',
+        ' "hashtags": ["5 virales y 5 de nicho (lugar, tema, institución)"]',
         '}'
     ].join('\n');
 }
@@ -608,9 +658,15 @@ function renderSub(s) {
     return esc(s).replace(/\*\*(.+?)\*\*/g, '<span class="red">$1</span>');
 }
 
+function copyText(t) {
+    if (window.R24Android && window.R24Android.copyText) { window.R24Android.copyText(t); return; }
+    try { navigator.clipboard.writeText(t); } catch (e) {}
+}
+
+var VERSION_LABELS = { amarillista: 'Amarillista', abandono: 'Abandono', critico: 'Crítico', perspectiva: 'Mi perspectiva' };
+
 async function aiWrite(card, g, deep) {
     var d = card.querySelector('.detail');
-    var previous = deep ? d.innerHTML : '';
     d.dataset.kind = deep ? 'deep' : 'ai';
     card.classList.add('open');
     var box = document.createElement('div');
@@ -620,19 +676,28 @@ async function aiWrite(card, g, deep) {
     d.appendChild(box);
     try {
         var articles = await readTopArticles(g, 3);
-        box.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Redactando al estilo R24' +
+        box.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Redactando 4 versiones al estilo R24' +
             (articles.length ? ' con ' + articles.length + (articles.length === 1 ? ' nota completa' : ' notas completas') : ' (solo con titulares)') + '...';
         var r = await aiCall(buildPrompt(g, deep, articles));
+        var versions = (r.versiones || []).filter(function (v) { return v && (v.linea1 || v.subtitulo); });
+        if (!versions.length) throw new Error('La IA no devolvió versiones. Toca "Otra versión".');
         var readInfo = articles.length
             ? 'Leí completas: ' + articles.map(function (a) { return a.item.source; }).join(', ')
             : 'No pude abrir las notas completas: redacté con los titulares. Revisa los datos antes de publicar.';
         var list = function (arr) { return (arr || []).length ? '<ul>' + arr.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<div class="hint">—</div>'; };
+        var alerts = (r.alertas_linea_roja || []).filter(Boolean);
+        var hashtags = (r.hashtags || []).map(function (h) { h = String(h).trim(); return h.charAt(0) === '#' ? h : '#' + h.replace(/\s+/g, ''); });
+
         box.innerHTML =
             '<div class="hint">' + esc(readInfo) + '</div>' +
-            '<label class="hint">Franja roja</label><input class="ed" data-f="tag" maxlength="30" value="' + esc((r.etiqueta || '').toUpperCase()) + '">' +
-            '<label class="hint">Título · línea 1</label><input class="ed" data-f="l1" maxlength="40" value="' + esc((r.linea1 || '').toUpperCase()) + '">' +
-            '<label class="hint">Título · línea 2</label><input class="ed" data-f="l2" maxlength="40" value="' + esc((r.linea2 || '').toUpperCase()) + '">' +
-            '<label class="hint">Subtítulo (lo que va entre **asteriscos** sale en rojo)</label><textarea class="ed" data-f="sub" rows="3" maxlength="220">' + esc(r.subtitulo || '') + '</textarea>' +
+            (alerts.length ? '<div class="redline"><b>Línea roja — revisa antes de publicar:</b>' + list(alerts) + '</div>' : '') +
+            (r.dato_que_duele ? '<h4 style="margin-top:6px">El dato que duele</h4><div>' + esc(r.dato_que_duele) + '</div>' : '') +
+            '<h4>Elige el ángulo</h4><div class="chips" data-versions></div>' +
+            '<div class="hint" data-why style="margin-top:6px"></div>' +
+            '<label class="hint">Franja roja <span data-count></span></label><input class="ed" data-f="tag" maxlength="30">' +
+            '<label class="hint">Título · línea 1</label><input class="ed" data-f="l1" maxlength="40">' +
+            '<label class="hint">Título · línea 2</label><input class="ed" data-f="l2" maxlength="40">' +
+            '<label class="hint">Subtítulo (lo que va entre **asteriscos** sale en rojo)</label><textarea class="ed" data-f="sub" rows="3" maxlength="220"></textarea>' +
             '<div class="hint" style="margin-top:6px">Vista previa:</div>' +
             '<div class="meta"><span class="badge hot" data-p="tag"></span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
             '<div class="preview-title" data-p="title" style="margin-top:6px"></div>' +
@@ -643,22 +708,52 @@ async function aiWrite(card, g, deep) {
             '<h4>Datos clave</h4>' + list(r.datos_clave) +
             (r.contraste ? '<h4>Qué dicen los medios</h4><div>' + esc(r.contraste) + '</div>' : '') +
             '<h4>Verificar antes de publicar</h4>' + list(r.verificar) +
-            '<h4>Otros títulos</h4>' + list(r.alternativas);
+            (r.copy ? '<h4>Copy para Instagram</h4><div style="white-space:pre-wrap">' + esc(r.copy) + '</div>' +
+                '<div class="hint" style="margin-top:4px">' + esc(hashtags.join(' ')) + '</div>' +
+                '<div class="actions"><button class="btn btn-small btn-light" data-act="copy">Copiar copy y hashtags</button></div>' : '');
+
         var cats = ['NACIONAL', 'ECONOMÍA', 'POLÍTICA', 'DEPORTE', 'INTERNACIONAL'];
         var cat = cats.indexOf((r.categoria || '').toUpperCase()) >= 0 ? r.categoria.toUpperCase() : state.cat;
-        var val = function (f) { return box.querySelector('[data-f="' + f + '"]').value.trim(); };
+        var field = function (f) { return box.querySelector('[data-f="' + f + '"]'); };
+        var val = function (f) { return field(f).value.trim(); };
         var refresh = function () {
-            box.querySelector('[data-p="tag"]').textContent = val('tag').toUpperCase();
+            var tag = val('tag').toUpperCase();
+            box.querySelector('[data-p="tag"]').textContent = tag;
+            var n = tag.length;
+            box.querySelector('[data-count]').innerHTML = '· ' + n + ' car.' + (n < 18 || n > 20 ? ' <span style="color:#d61f2c">(ideal 18-20)</span>' : ' ✓');
             box.querySelector('[data-p="title"]').innerHTML = esc(val('l1').toUpperCase()) + '<br>' + esc(val('l2').toUpperCase());
             box.querySelector('[data-p="sub"]').innerHTML = renderSub(val('sub'));
         };
+        var pick = function (i) {
+            var v = versions[i];
+            field('tag').value = (v.franja || '').toUpperCase();
+            field('l1').value = (v.linea1 || '').toUpperCase();
+            field('l2').value = (v.linea2 || '').toUpperCase();
+            field('sub').value = v.subtitulo || '';
+            box.querySelector('[data-why]').textContent = v.por_que ? 'Por qué: ' + v.por_que : '';
+            Array.prototype.forEach.call(box.querySelectorAll('[data-versions] .chip'), function (c, j) { c.classList.toggle('on', j === i); });
+            refresh();
+        };
+        var chips = box.querySelector('[data-versions]');
+        versions.forEach(function (v, i) {
+            var c = document.createElement('span');
+            c.className = 'chip ver-' + (v.tipo || '');
+            c.textContent = VERSION_LABELS[v.tipo] || v.tipo || ('Versión ' + (i + 1));
+            c.onclick = function () { pick(i); };
+            chips.appendChild(c);
+        });
         Array.prototype.forEach.call(box.querySelectorAll('.ed'), function (el) { el.oninput = refresh; });
-        refresh();
+        // Arranca con "mi perspectiva" si viene; si no, con la primera
+        var start = versions.findIndex(function (v) { return v.tipo === 'perspectiva'; });
+        pick(start >= 0 ? start : 0);
+
         box.querySelector('[data-act="useai"]').onclick = function () {
             var t = [val('l1'), val('l2')].filter(Boolean).join('\n') || g.title;
             useInTemplate(t, val('sub'), cat, val('tag'));
         };
         box.querySelector('[data-act="again"]').onclick = function () { box.remove(); aiWrite(card, g, deep); };
+        var copyBtn = box.querySelector('[data-act="copy"]');
+        if (copyBtn) copyBtn.onclick = function () { copyText(r.copy + '\n\n' + hashtags.join(' ')); copyBtn.textContent = 'Copiado'; };
     } catch (e) {
         box.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
     }

@@ -492,10 +492,12 @@ fun IdeaLabDialog(
 
     fun buildResult() {
         val cat = category ?: return
-        history.addAll(answersOfThisRound())
+        // Las respuestas de esta ronda se suman sin guardarlas en el historial: si vuelve atrás
+        // y estructura otra vez, no se duplican
+        val qa = history.toList() + answersOfThisRound()
         runAi("Estructurando tu idea...") {
             result = withContext(Dispatchers.IO) {
-                IdeaLabAi.structure(context, cat, sub, description, photo, history.toList())
+                IdeaLabAi.structure(context, cat, sub, description, photo, qa)
             }
             step = LabStep.RESULT
         }

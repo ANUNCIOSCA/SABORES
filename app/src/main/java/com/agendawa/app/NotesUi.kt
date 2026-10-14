@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BusinessCenter
@@ -96,6 +97,7 @@ fun NotesScreen(
     onEdit: (SmartNote) -> Unit,
     onDelete: (SmartNote) -> Unit,
     onTogglePin: (SmartNote) -> Unit,
+    onDevelop: ((SmartNote) -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf<SmartNoteType?>(null) }
@@ -156,13 +158,25 @@ fun NotesScreen(
             item { EmptyState(Icons.Rounded.SearchOff, "No encontramos resultados", "Prueba otro texto o cambia el filtro.") }
         }
         items(filtered, key = { it.id }) { note ->
-            SmartNoteCard(note, onClick = { onEdit(note) }, onPin = { onTogglePin(note) }, onDelete = { onDelete(note) })
+            SmartNoteCard(
+                note,
+                onClick = { onEdit(note) },
+                onPin = { onTogglePin(note) },
+                onDelete = { onDelete(note) },
+                onDevelop = onDevelop?.let { dev -> { dev(note) } },
+            )
         }
     }
 }
 
 @Composable
-fun SmartNoteCard(note: SmartNote, onClick: () -> Unit, onPin: () -> Unit, onDelete: () -> Unit) {
+fun SmartNoteCard(
+    note: SmartNote,
+    onClick: () -> Unit,
+    onPin: () -> Unit,
+    onDelete: () -> Unit,
+    onDevelop: (() -> Unit)? = null,
+) {
     val color = noteTypeColor(note.type)
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -201,6 +215,20 @@ fun SmartNoteCard(note: SmartNote, onClick: () -> Unit, onPin: () -> Unit, onDel
             if (note.tags.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
                 Text(note.tags.split(",").joinToString(" ") { "#" + it.trim().replace(" ", "") }, style = MaterialTheme.typography.labelSmall, color = color)
+            }
+            // Ideas, negocios y proyectos: se pueden llevar al Laboratorio para desarrollarlos
+            if (note.type in setOf(SmartNoteType.IDEA, SmartNoteType.BUSINESS, SmartNoteType.PROJECT)) {
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(end = 10.dp)) {
+                    if (onDevelop != null) {
+                        Button(onClick = onDevelop, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Outlined.Science, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Desarrollar")
+                        }
+                    }
+                    OutlinedButton(onClick = onClick, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Outlined.Edit, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Editar")
+                    }
+                }
             }
         }
     }

@@ -155,6 +155,22 @@ private fun AlarmScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = AgendaGreen, contentColor = Color.White),
                     ) { Text("Abrir WhatsApp") }
                 }
+                // Reuniones y viajes guardados por voz traen "Lugar: ..." → abrir el mapa
+                val place = task.message.lineSequence().firstOrNull { it.startsWith("Lugar: ") }?.removePrefix("Lugar: ")?.trim()
+                if (!place.isNullOrBlank()) {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    FilledTonalButton(
+                        onClick = {
+                            runCatching {
+                                ctx.startActivity(
+                                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0?q=" + android.net.Uri.encode(place)))
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                    ) { Text("Cómo llegar: $place", maxLines = 1) }
+                }
                 if (PhoneCall.isCall(task)) {
                     Button(
                         onClick = onCall,

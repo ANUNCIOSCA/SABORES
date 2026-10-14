@@ -26,15 +26,23 @@ object VoiceParser {
     private fun defaultTime(now: LocalDateTime): LocalTime =
         now.plusHours(1).withMinute(0).withSecond(0).withNano(0).toLocalTime()
 
+    private val morningPhrase = Regex("(de|por|en) la mañana")
+
     private fun parseTime(text: String): LocalTime? {
+        if (Regex("\\b(al )?mediod[ií]a\\b").containsMatchIn(text)) return LocalTime.NOON
         val match = Regex("(?:a\\s+las?|a\\s+la)\\s+(\\d{1,2})(?::(\\d{2}))?").find(text)
             ?: Regex("\\b(\\d{1,2}):(\\d{2})\\b").find(text)
             ?: return null
         var hour = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return null
-        val minute = match.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
-        val afternoon = text.contains("de la tarde") || text.contains("por la tarde")
-        val night = text.contains("de la noche") || text.contains("por la noche")
-        val morning = text.contains("de la mañana") || text.contains("por la mañana")
+        var minute = match.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
+        // "a las 3 y media", "a las 3 y cuarto", "a las 3 y 20"
+        val after = text.substring(match.range.last + 1)
+        Regex("^\\s*y\\s+(media|cuarto|\\d{1,2})").find(after)?.let {
+            minute = when (it.groupValues[1]) { "media" -> 30; "cuarto" -> 15; else -> it.groupValues[1].toInt() }
+        }
+        val afternoon = text.contains("de la tarde") || text.contains("por la tarde") || text.contains("en la tarde")
+        val night = text.contains("de la noche") || text.contains("por la noche") || text.contains("en la noche")
+        val morning = morningPhrase.containsMatchIn(text)
         if ((afternoon || night) && hour in 1..11) hour += 12
         // "a las 3" sin decir de la mañana: en una agenda casi siempre es de la tarde
         else if (!morning && hour in 1..6) hour += 12
@@ -55,8 +63,8 @@ object VoiceParser {
         val now = LocalDateTime.now()
         val date: LocalDate = when {
             text.contains("pasado mañana") -> now.toLocalDate().plusDays(2)
-            text.contains("mañana") && !text.contains("de la mañana") && !text.contains("por la mañana") ->
-                now.toLocalDate().plusDays(1)
+            // "mañana a las 9 de la mañana": se quita "de la mañana" antes de buscar el día
+            morningPhrase.replace(text, "").contains("mañana") -> now.toLocalDate().plusDays(1)
             text.contains("hoy") -> now.toLocalDate()
             else -> resolveWeekday(text, now.toLocalDate()) ?: now.toLocalDate()
         }
@@ -77,10 +85,11 @@ object VoiceParser {
 
         var cleaned = input
         cleaned = Regex("(?i)recuérdame|recuerdame|recordarme|recordatorio de|recordatorio").replace(cleaned, "")
+        // Primero las frases largas ("de la mañana") y luego las palabras sueltas ("mañana")
+        cleaned = Regex("(?i)(de|por|en) la (tarde|noche|mañana)|(al )?mediod[ií]a").replace(cleaned, "")
         cleaned = Regex("(?i)pasado mañana|hoy|mañana").replace(cleaned, "")
-        cleaned = Regex("(?i)a las?\\s+\\d{1,2}(:\\d{2})?").replace(cleaned, "")
+        cleaned = Regex("(?i)a las?\\s+\\d{1,2}(:\\d{2})?(\\s+y\\s+(media|cuarto|\\d{1,2}))?").replace(cleaned, "")
         cleaned = Regex("(?i)en\\s+\\d+\\s+(minutos?|horas?)").replace(cleaned, "")
-        cleaned = Regex("(?i)(de|por) la (tarde|noche|mañana)").replace(cleaned, "")
         cleaned = Regex("\\s+").replace(cleaned, " ").trim(' ', ',', '.', '-')
         if (cleaned.isBlank()) cleaned = input.trim()
 

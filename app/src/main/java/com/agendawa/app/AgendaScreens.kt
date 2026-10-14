@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AccessTime
@@ -185,6 +187,8 @@ fun TodayScreen(
 
 @Composable
 fun VoiceHero(onVoice: () -> Unit) {
+    val context = LocalContext.current
+    var speak by remember { mutableStateOf(VoicePrefs.speakBack(context)) }
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -210,11 +214,30 @@ fun VoiceHero(onVoice: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                Box(
-                    Modifier.size(64.dp).clip(CircleShape).background(Color.White),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.Mic, "Tocar para hablar", tint = AgendaBlue, modifier = Modifier.size(32.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        Modifier.size(64.dp).clip(CircleShape).background(Color.White),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Rounded.Mic, "Tocar para hablar", tint = AgendaBlue, modifier = Modifier.size(32.dp))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    // Escuchar o no la voz de confirmación ("Copiado, Alberto")
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable { speak = !speak; VoicePrefs.setSpeakBack(context, speak) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (speak) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff,
+                            if (speak) "Voz activada" else "Voz desactivada",
+                            tint = Color.White, modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (speak) "Voz sí" else "Voz no", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
@@ -295,6 +318,15 @@ fun TaskCard(task: AgendaTask, actions: TaskActions, showDate: Boolean = false) 
                 }
                 if (task.message.isNotBlank() && task.message != task.title) {
                     Text(task.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                } else if (task.isWhatsApp && !task.completed) {
+                    Text("Sin mensaje todavía", style = MaterialTheme.typography.bodySmall, color = AgendaDanger)
+                }
+                if (task.isWhatsApp && !task.completed && actions.onDraft != null) {
+                    TextButton(onClick = { actions.onDraft?.invoke(task) }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
+                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (task.message.isBlank() || task.message == task.title) "Redactar mensaje" else "Redactar de nuevo")
+                    }
                 }
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -747,3 +779,79 @@ private fun QuickTimeChip(label: String, onClick: () -> Unit) {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Redactar el mensaje de un WhatsApp programado
+// ---------------------------------------------------------------------------
+
+@Composable
+fun DraftMessageDialog(task: AgendaTask, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val aiEnabled = remember { AiSettings.isEnabled(context) }
+    val person = task.title.substringAfter("Enviar WhatsApp a ", "").trim()
+    var intent by remember { mutableStateOf(if (task.message == task.title) "" else task.message) }
+    var draft by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val dictate = rememberSpeechInput("¿Qué le quieres decir${if (person.isNotBlank()) " a $person" else ""}?") { text ->
+        intent = if (intent.isBlank()) text else "$intent $text"
+    }
+    val write = {
+        working = true; error = null
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { AiAssistant.polishWhatsApp(context, intent, person) } }
+                .onSuccess { draft = it }
+                .onFailure { error = it.message }
+            working = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        title = { Text(if (person.isNotBlank()) "Mensaje para $person" else "Redactar mensaje") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = intent,
+                    onValueChange = { intent = it.take(2000); error = null },
+                    label = { Text("¿Qué le quieres decir?") },
+                    placeholder = { Text("Ej.: que mañana le paso el presupuesto y que me confirme la hora") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = dictate, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.Mic, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Dictar")
+                    }
+                    Button(onClick = { write() }, enabled = aiEnabled && intent.isNotBlank() && !working, modifier = Modifier.weight(1f)) {
+                        if (working) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (draft.isBlank()) "Redactar" else "Otra versión") }
+                    }
+                }
+                if (!aiEnabled) {
+                    Text(
+                        "Activa la IA en Configuración para que lo redacte. Mientras tanto se guarda tal cual lo escribas.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (draft.isNotBlank()) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it.take(4000) },
+                        label = { Text("Mensaje listo (puedes ajustarlo)") },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                    )
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(draft.ifBlank { intent }.trim()) },
+                enabled = draft.isNotBlank() || intent.isNotBlank(),
+            ) { Text("Guardar mensaje") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}

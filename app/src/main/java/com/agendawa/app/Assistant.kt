@@ -48,7 +48,9 @@ private const val TRAVEL_LEAD_MIN = 120L
 
 /** Interpretación sin internet, con reglas. Se usa si no hay IA o si la IA falla. */
 object LocalIntentParser {
-    private val ideaWords = listOf("tengo una idea", "se me ocurrio", "se me ocurre", "idea:", "una idea", "anota esta idea", "idea de")
+    // "Fuertes": si la frase empieza así es una idea aunque mencione a alguien
+    private val ideaStarts = listOf("tengo una idea", "se me ocurrio", "se me ocurre", "idea:", "una idea", "anota esta idea", "mi idea", "idea para", "idea de")
+    private val ideaWords = listOf("tengo una idea", "se me ocurrio", "se me ocurre", "anota esta idea")
     private val noteWords = listOf("anota", "apunta", "toma nota", "guarda una nota", "nota:")
     private val callWords = listOf("llamar", "llamarle", "llamale", "llama a", "llamada")
     private val writeWords = listOf("whatsapp", "wasap", "guasap", "escribir", "escribirle", "escribele", "mensaje", "decirle", "avisarle", "mandarle")
@@ -71,9 +73,11 @@ object LocalIntentParser {
         val norm = SmartNoteOrganizer.normalize(text)
         val base = VoiceParser.parse(text)
         val kind = when {
-            ideaWords.any { norm.contains(it) } -> VoiceIntentKind.IDEA
+            ideaStarts.any { norm.startsWith(it) } -> VoiceIntentKind.IDEA
+            // Llamar/escribir pesan más que "idea" en medio de la frase ("escríbele a Carlos sobre la idea de...")
             callWords.any { norm.contains(it) } -> VoiceIntentKind.CALL
             writeWords.any { norm.contains(it) } -> VoiceIntentKind.WHATSAPP
+            ideaWords.any { norm.contains(it) } -> VoiceIntentKind.IDEA
             meetingWords.any { norm.contains(it) } -> VoiceIntentKind.MEETING
             travelWords.any { norm.contains(it) } -> VoiceIntentKind.TRAVEL
             noteWords.any { norm.startsWith(it) } -> VoiceIntentKind.NOTE

@@ -44,6 +44,8 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
@@ -217,6 +219,7 @@ fun AgendaWaApp(
     /** Texto inicial del Laboratorio de ideas; null = cerrado. */
     var ideaLab by remember { mutableStateOf<String?>(null) }
     var ideaLabFromVoice by remember { mutableStateOf(false) }
+    var draftTask by remember { mutableStateOf<AgendaTask?>(null) }
     var thinking by remember { mutableStateOf<String?>(null) }
     var contactChoice by remember { mutableStateOf<Pair<VoiceIntent, List<SelectedPhoneContact>>?>(null) }
     var waitingContactsPermission by remember { mutableStateOf<VoiceIntent?>(null) }
@@ -293,7 +296,7 @@ fun AgendaWaApp(
 
     /** Recordatorios, reuniones y viajes: se guardan de una vez. */
     val saveReminder: (VoiceIntent) -> Unit = { vi ->
-        val (_, result) = state.createTask(vi.title, vi.details(), "", vi.dateTimeMillis, false)
+        val (_, result) = state.createTask(vi.title, vi.details(), "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), false)
         val whenText = spokenWhen(if (vi.eventMillis > 0) vi.eventMillis else vi.dateTimeMillis)
         val what = when (vi.kind) {
             VoiceIntentKind.MEETING -> "${vi.title}, $whenText. Te aviso antes"
@@ -329,7 +332,7 @@ fun AgendaWaApp(
                 }.also { thinking = null }
             } else said.replaceFirstChar { it.uppercase() }
             val title = "Enviar WhatsApp a ${contact.displayName}"
-            state.createTask(title, msg, contact.phoneNumber, vi.dateTimeMillis, true)
+            state.createTask(title, msg, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true)
             finishVoice("WhatsApp para ${contact.displayName} listo, ${spokenWhen(vi.dateTimeMillis)}")
         }
     }
@@ -350,7 +353,7 @@ fun AgendaWaApp(
                 askMessageByVoice()
             }
             else -> {
-                val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis, isWa)
+                val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), isWa)
                 val whenText = spokenWhen(vi.dateTimeMillis)
                 finishVoice(
                     (if (isWa) "WhatsApp para ${contact.displayName} listo, $whenText" else "Llamar a ${contact.displayName}, $whenText") +
@@ -388,12 +391,8 @@ fun AgendaWaApp(
 
     val handleVoiceIntent: (VoiceIntent) -> Unit = { vi ->
         when (vi.kind) {
-            VoiceIntentKind.IDEA -> if (AiSettings.isEnabled(context)) {
-                // Las ideas se desarrollan en el Laboratorio: categoría, preguntas y documento
-                ideaLabFromVoice = true
-                ideaLab = vi.content.ifBlank { vi.title }
-            } else saveIdea(vi)
-            VoiceIntentKind.NOTE -> saveIdea(vi)
+            // Las ideas se guardan siempre; en la tarjeta quedan "Desarrollar" (Laboratorio) y "Editar"
+            VoiceIntentKind.IDEA, VoiceIntentKind.NOTE -> saveIdea(vi)
             VoiceIntentKind.CALL, VoiceIntentKind.WHATSAPP -> when {
                 vi.personName.isBlank() -> scheduleForContact(vi, null)
                 ContactSearch.hasPermission(context) -> resolveContact(vi)
@@ -413,7 +412,11 @@ fun AgendaWaApp(
             val next = voiceQueue.first()
             voiceQueue = voiceQueue.drop(1)
             voiceBusy = true
-            handleVoiceIntent(next)
+            // Si algo falla a mitad de camino, la cola no se queda trabada
+            runCatching { handleVoiceIntent(next) }.onFailure {
+                showMessage("No pude completar \"${next.title}\": ${it.message}")
+                finishVoice(null)
+            }
         } else if (voiceDone.isNotEmpty()) {
             val summary = voiceDone.joinToString(". ")
             voiceDone.clear()
@@ -454,6 +457,7 @@ fun AgendaWaApp(
         onDelete = { confirmDeleteTask = it },
         onToggle = { task, done -> state.setCompleted(task, done) },
         onWhatsApp = openWhatsApp,
+        onDraft = { draftTask = it },
     )
 
     val openSectionFromDrawer: (AppSection) -> Unit = { s ->
@@ -522,6 +526,16 @@ fun AgendaWaApp(
                                             onClick = { showMenu = false; showProfile = true })
                                         DropdownMenuItem(text = { Text("Configuración (IA y huella)") }, leadingIcon = { Icon(Icons.Rounded.Settings, null) },
                                             onClick = { showMenu = false; showSettings = true })
+                                        val speakOn = VoicePrefs.speakBack(context)
+                                        DropdownMenuItem(
+                                            text = { Text(if (speakOn) "Voz de confirmación: activada" else "Voz de confirmación: apagada") },
+                                            leadingIcon = { Icon(if (speakOn) Icons.AutoMirrored.Outlined.VolumeUp else Icons.AutoMirrored.Outlined.VolumeOff, null) },
+                                            onClick = {
+                                                VoicePrefs.setSpeakBack(context, !speakOn)
+                                                showMenu = false
+                                                showMessage(if (speakOn) "Voz apagada" else "Voz activada")
+                                            },
+                                        )
                                     }
                                 }
                             },
@@ -577,6 +591,7 @@ fun AgendaWaApp(
                                 onEdit = { noteEditor = NoteEditorRequest(note = it) },
                                 onDelete = { confirmDeleteNote = it },
                                 onTogglePin = { state.toggleNotePin(it) },
+                                onDevelop = { ideaLab = listOf(it.title, it.content).filter { s -> s.isNotBlank() }.joinToString("\n") },
                             )
                             3 -> CalendarScreen(
                                 state = state,
@@ -679,6 +694,18 @@ fun AgendaWaApp(
             )
         }
 
+        draftTask?.let { task ->
+            DraftMessageDialog(
+                task = task,
+                onDismiss = { draftTask = null },
+                onSave = { message ->
+                    state.saveTask(task.copy(message = message))
+                    draftTask = null
+                    showMessage("Mensaje listo. A la hora solo tocas Enviar.")
+                },
+            )
+        }
+
         ideaLab?.let { initial ->
             IdeaLabDialog(
                 initialText = initial,
@@ -762,6 +789,8 @@ data class TaskActions(
     val onDelete: (AgendaTask) -> Unit,
     val onToggle: (AgendaTask, Boolean) -> Unit,
     val onWhatsApp: (AgendaTask) -> Unit,
+    /** Redactar el mensaje de un WhatsApp programado. */
+    val onDraft: ((AgendaTask) -> Unit)? = null,
 )
 
 @Composable

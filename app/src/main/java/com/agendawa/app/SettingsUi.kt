@@ -14,6 +14,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Person
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -151,21 +155,42 @@ fun LockScreen(onUnlock: () -> Unit) {
 }
 
 // ---------------------------------------------------------------------------
-// Configuración: IA (Gemini) y seguridad
+// Configuración: IA (varios proveedores) y seguridad
 // ---------------------------------------------------------------------------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
     val context = LocalContext.current
     val activity = context as FragmentActivity
     val scope = rememberCoroutineScope()
 
-    var apiKey by remember { mutableStateOf(AiSettings.apiKey(context)) }
-    var model by remember { mutableStateOf(AiSettings.model(context)) }
+    var provider by remember { mutableStateOf(AiSettings.activeProvider(context)) }
+    var apiKey by remember { mutableStateOf(AiSettings.apiKey(context, provider)) }
+    var model by remember { mutableStateOf(AiSettings.model(context, provider)) }
+    var fallback by remember { mutableStateOf(AiSettings.fallbackEnabled(context)) }
     var showKey by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
+    var loadingModels by remember { mutableStateOf(false) }
+    var modelList by remember { mutableStateOf<List<String>?>(null) }
     var lockEnabled by remember { mutableStateOf(AppLock.isEnabled(context)) }
+    var configuredNow by remember { mutableStateOf(AiSettings.configured(context)) }
+
+    // Guarda lo que hay en pantalla del proveedor actual
+    val saveCurrent = {
+        AiSettings.save(context, provider, apiKey, model)
+        configuredNow = AiSettings.configured(context)
+    }
+    val switchTo: (AiProvider) -> Unit = { p ->
+        saveCurrent()
+        provider = p
+        AiSettings.setActiveProvider(context, p)
+        apiKey = AiSettings.apiKey(context, p)
+        model = AiSettings.model(context, p)
+        testResult = null
+        configuredNow = AiSettings.configured(context)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -175,19 +200,32 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.AutoAwesome, null, tint = AgendaBlue)
                     Spacer(Modifier.width(8.dp))
-                    Text("Inteligencia artificial (Gemini)", fontWeight = FontWeight.SemiBold)
+                    Text("Inteligencia artificial", fontWeight = FontWeight.SemiBold)
                 }
                 Text(
-                    "Con tu clave de Gemini, la agenda entiende lo que dictas, redacta tus ideas y deja listos los mensajes de WhatsApp. " +
-                        "La clave se guarda solo en este teléfono.",
+                    "Elige el proveedor y pega tu clave. La agenda entiende lo que dictas, redacta tus ideas y deja listos los " +
+                        "mensajes de WhatsApp. Las claves se guardan solo en este teléfono.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    AiProvider.entries.forEach { p ->
+                        FilterChip(
+                            selected = provider == p,
+                            onClick = { switchTo(p) },
+                            label = { Text(p.label) },
+                            leadingIcon = if (p in configuredNow) {
+                                { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(16.dp), tint = AgendaGreen) }
+                            } else null,
+                        )
+                    }
+                }
+                Text(provider.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it.trim(); testResult = null },
-                    label = { Text("Clave de API de Gemini") },
-                    placeholder = { Text("AIza...") },
+                    label = { Text("Clave de ${provider.label}") },
+                    placeholder = { Text(provider.keyHint) },
                     singleLine = true,
                     visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
@@ -201,26 +239,39 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
                     value = model,
                     onValueChange = { model = it.trim(); testResult = null },
                     label = { Text("Modelo") },
-                    supportingText = { Text("Recomendado: ${AiSettings.DEFAULT_MODEL}") },
+                    supportingText = { Text("Sugerido: ${provider.defaultModel}") },
                     singleLine = true,
+                    trailingIcon = {
+                        TextButton(
+                            enabled = apiKey.isNotBlank() && !loadingModels,
+                            onClick = {
+                                loadingModels = true
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { runCatching { AiClient.listModels(provider, apiKey) } }
+                                        .onSuccess { modelList = it; if (it.isEmpty()) showMessage("No llegaron modelos para esa clave") }
+                                        .onFailure { testResult = "❌ ${it.message}" }
+                                    loadingModels = false
+                                }
+                            },
+                        ) { if (loadingModels) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Text("Ver modelos") }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 TextButton(onClick = {
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/apikey")))
-                    }
-                }) { Text("¿No tienes clave? Sácala gratis en Google AI Studio") }
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(provider.keyUrl))) }
+                }) { Text("¿No tienes clave? Sácala en ${provider.label}") }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         enabled = apiKey.isNotBlank() && !testing,
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            AiSettings.save(context, apiKey, model)
+                            saveCurrent()
                             testing = true
                             testResult = null
+                            val p = provider; val k = apiKey; val m = model
                             scope.launch {
                                 testResult = withContext(Dispatchers.IO) {
-                                    runCatching { GeminiClient.test(context); "✅ Gemini conectado y funcionando" }
+                                    runCatching { AiClient.test(context, p, k, m); "✅ ${p.label} conectado y funcionando" }
                                         .getOrElse { "❌ ${it.message}" }
                                 }
                                 testing = false
@@ -229,15 +280,27 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
                     ) {
                         if (testing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Probar conexión")
                     }
-                    if (AiSettings.isEnabled(context)) {
+                    if (provider in configuredNow) {
                         OutlinedButton(modifier = Modifier.weight(1f), onClick = {
                             apiKey = ""
-                            AiSettings.save(context, "", model)
-                            testResult = "IA desactivada. La agenda sigue funcionando sin internet."
+                            saveCurrent()
+                            testResult = if (configuredNow.isEmpty()) "IA desactivada. La agenda sigue funcionando sin internet."
+                            else "Clave quitada. Se usará ${configuredNow.first().label}."
                         }) { Text("Quitar clave") }
                     }
                 }
                 testResult?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Respaldo automático", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Si el proveedor elegido falla o se queda sin cupo, usa otro que tenga clave.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = fallback, onCheckedChange = { fallback = it; AiSettings.setFallback(context, it) })
+                }
 
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
 
@@ -277,14 +340,39 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
         },
         confirmButton = {
             Button(onClick = {
-                AiSettings.save(context, apiKey, model)
-                showMessage(if (apiKey.isNotBlank()) "Configuración guardada. IA activa." else "Configuración guardada")
+                saveCurrent()
+                AiSettings.setActiveProvider(context, provider)
+                showMessage(if (AiSettings.isEnabled(context)) "Configuración guardada. IA activa con ${AiSettings.configured(context).first().label}." else "Configuración guardada")
                 onDismiss()
             }) { Text("Guardar") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
     )
+
+    modelList?.let { list ->
+        AlertDialog(
+            onDismissRequest = { modelList = null },
+            title = { Text("Modelos de ${provider.label}") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    list.forEach { m ->
+                        Text(
+                            m,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable { model = m; modelList = null; testResult = null }
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            fontWeight = if (m == model) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { modelList = null }) { Text("Cerrar") } },
+        )
+    }
 }
+
 
 // ---------------------------------------------------------------------------
 // Diálogos del asistente de voz

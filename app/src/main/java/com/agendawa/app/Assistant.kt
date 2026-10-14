@@ -5,109 +5,11 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.ContactsContract
 import androidx.core.content.ContextCompat
-import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-
-// ---------------------------------------------------------------------------
-// Configuración de la IA (Gemini)
-// ---------------------------------------------------------------------------
-
-/**
- * La clave de Gemini se guarda solo en este teléfono (no va en las copias de seguridad).
- */
-object AiSettings {
-    private const val PREFS = "agenda_wa_ai"
-    const val DEFAULT_MODEL = "gemini-2.5-flash"
-
-    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-
-    fun apiKey(context: Context): String = prefs(context).getString("api_key", "")?.trim().orEmpty()
-    fun model(context: Context): String = prefs(context).getString("model", DEFAULT_MODEL)?.trim().orEmpty().ifBlank { DEFAULT_MODEL }
-    fun isEnabled(context: Context): Boolean = apiKey(context).isNotBlank()
-
-    fun save(context: Context, apiKey: String, model: String) {
-        prefs(context).edit()
-            .putString("api_key", apiKey.trim())
-            .putString("model", model.trim().ifBlank { DEFAULT_MODEL })
-            .apply()
-    }
-}
-
-class AiException(message: String) : Exception(message)
-
-/** Cliente mínimo de la API de Gemini (generateContent). Se llama fuera del hilo principal. */
-object GeminiClient {
-
-    fun generate(context: Context, prompt: String, json: Boolean): String {
-        val key = AiSettings.apiKey(context)
-        if (key.isBlank()) throw AiException("Falta la clave de Gemini en Configuración")
-        val model = AiSettings.model(context)
-        val body = JSONObject().apply {
-            put("contents", JSONArray().put(JSONObject().apply {
-                put("role", "user")
-                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-            }))
-            put("generationConfig", JSONObject().apply {
-                put("temperature", 0.4)
-                if (json) put("responseMimeType", "application/json")
-            })
-        }
-
-        val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
-            .openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "POST"
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 45_000
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.setRequestProperty("x-goog-api-key", key)
-            conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-
-            val code = conn.responseCode
-            val raw = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                val apiMsg = runCatching { JSONObject(raw).getJSONObject("error").getString("message") }.getOrNull()
-                throw AiException(
-                    when (code) {
-                        400, 401, 403 -> "Gemini rechazó la clave o la petición. Revisa la clave en Configuración." + (apiMsg?.let { "\n($it)" } ?: "")
-                        404 -> "El modelo \"$model\" no existe. Cámbialo en Configuración."
-                        429 -> "Se alcanzó el límite de uso de Gemini. Intenta en un rato."
-                        else -> "Error de Gemini ($code)" + (apiMsg?.let { ": $it" } ?: "")
-                    },
-                )
-            }
-            val parts = JSONObject(raw).getJSONArray("candidates").getJSONObject(0)
-                .getJSONObject("content").getJSONArray("parts")
-            val text = buildString {
-                for (i in 0 until parts.length()) {
-                    val p = parts.getJSONObject(i)
-                    if (!p.optBoolean("thought")) append(p.optString("text"))
-                }
-            }.trim()
-            if (text.isBlank()) throw AiException("Gemini no devolvió respuesta")
-            return text
-        } catch (e: AiException) {
-            throw e
-        } catch (e: java.io.IOException) {
-            throw AiException("Sin conexión a internet o Gemini no respondió.")
-        } catch (e: Exception) {
-            throw AiException("No se entendió la respuesta de Gemini.")
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    /** Prueba rápida de la clave desde Configuración. */
-    fun test(context: Context): String = generate(context, "Responde solo: OK", json = false)
-}
 
 // ---------------------------------------------------------------------------
 // Qué quiso decir el usuario al hablar
@@ -191,7 +93,7 @@ object LocalIntentParser {
     }
 }
 
-/** Interpretación con Gemini: entiende frases libres y redacta ideas y mensajes. */
+/** Interpretación con IA (el proveedor elegido): entiende frases libres y redacta ideas y mensajes. */
 object AiAssistant {
     private val isoFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")
 
@@ -217,7 +119,7 @@ object AiAssistant {
               whatsapp o recordatorio, usa dentro de 1 hora. Para idea o nota, vacío.
         """.trimIndent()
 
-        val o = JSONObject(GeminiClient.generate(context, prompt, json = true).removeSurrounding("```json", "```").trim())
+        val o = JSONObject(AiClient.extractJson(AiClient.generate(context, prompt, json = true)))
         val kind = when (o.optString("tipo").lowercase(Locale.ROOT)) {
             "idea" -> VoiceIntentKind.IDEA
             "nota" -> VoiceIntentKind.NOTE
@@ -242,7 +144,7 @@ object AiAssistant {
     }
 
     /** Redacta y ordena una idea o nota escrita a la carrera. */
-    fun polishNote(context: Context, content: String): String = GeminiClient.generate(
+    fun polishNote(context: Context, content: String): String = AiClient.generate(
         context,
         """
             Ordena y redacta esta idea o nota en español, clara y bien escrita. Empieza con un resumen de 1-2 frases y
@@ -256,7 +158,7 @@ object AiAssistant {
     )
 
     /** Convierte lo que se quiere decir en un mensaje de WhatsApp listo para enviar. */
-    fun polishWhatsApp(context: Context, message: String, personName: String): String = GeminiClient.generate(
+    fun polishWhatsApp(context: Context, message: String, personName: String): String = AiClient.generate(
         context,
         """
             Redacta un mensaje de WhatsApp listo para enviar${if (personName.isNotBlank()) " a $personName" else ""},

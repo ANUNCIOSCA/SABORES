@@ -287,7 +287,7 @@ fun SmartNoteEditorDialog(request: NoteEditorRequest, onDismiss: () -> Unit, onS
                 }
                 Text(
                     if (aiEnabled) "La IA ordena tu idea; \"Organizar\" la clasifica y le pone etiquetas."
-                    else "Agenda WA puede clasificarla y sugerir etiquetas. Activa Gemini en Configuración para que también la redacte.",
+                    else "Agenda WA puede clasificarla y sugerir etiquetas. Activa la IA en Configuración para que también la redacte.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(

@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -213,6 +214,9 @@ fun AgendaWaApp(
     var showProfile by remember { mutableStateOf(false) }
     var showAlarmSettings by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    /** Texto inicial del Laboratorio de ideas; null = cerrado. */
+    var ideaLab by remember { mutableStateOf<String?>(null) }
+    var ideaLabFromVoice by remember { mutableStateOf(false) }
     var thinking by remember { mutableStateOf<String?>(null) }
     var contactChoice by remember { mutableStateOf<Pair<VoiceIntent, List<SelectedPhoneContact>>?>(null) }
     var waitingContactsPermission by remember { mutableStateOf<VoiceIntent?>(null) }
@@ -384,7 +388,12 @@ fun AgendaWaApp(
 
     val handleVoiceIntent: (VoiceIntent) -> Unit = { vi ->
         when (vi.kind) {
-            VoiceIntentKind.IDEA, VoiceIntentKind.NOTE -> saveIdea(vi)
+            VoiceIntentKind.IDEA -> if (AiSettings.isEnabled(context)) {
+                // Las ideas se desarrollan en el Laboratorio: categoría, preguntas y documento
+                ideaLabFromVoice = true
+                ideaLab = vi.content.ifBlank { vi.title }
+            } else saveIdea(vi)
+            VoiceIntentKind.NOTE -> saveIdea(vi)
             VoiceIntentKind.CALL, VoiceIntentKind.WHATSAPP -> when {
                 vi.personName.isBlank() -> scheduleForContact(vi, null)
                 ContactSearch.hasPermission(context) -> resolveContact(vi)
@@ -466,6 +475,7 @@ fun AgendaWaApp(
                     onAlarms = { showAlarmSettings = true; scope.launch { drawerState.close() } },
                     onProfile = { showProfile = true; scope.launch { drawerState.close() } },
                     onSettings = { showSettings = true; scope.launch { drawerState.close() } },
+                    onIdeaLab = { ideaLab = ""; scope.launch { drawerState.close() } },
                 )
             },
         ) {
@@ -494,6 +504,7 @@ fun AgendaWaApp(
                                 IconButton(onClick = { scope.launch { drawerState.open() } }) { Icon(Icons.Rounded.Menu, "Menú") }
                             },
                             actions = {
+                                IconButton(onClick = { ideaLab = "" }) { Icon(Icons.Rounded.Science, "Laboratorio de ideas") }
                                 IconButton(onClick = startVoiceReminder) { Icon(Icons.Rounded.Mic, "Crear por voz") }
                                 Box {
                                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Rounded.MoreVert, "Más opciones") }
@@ -606,6 +617,7 @@ fun AgendaWaApp(
             SmartNoteEditorDialog(
                 request = req,
                 onDismiss = { noteEditor = null },
+                onDevelop = { text -> noteEditor = null; ideaLab = text },
                 onSave = { note ->
                     state.saveNote(note)
                     noteEditor = null
@@ -663,6 +675,18 @@ fun AgendaWaApp(
                     context.getSharedPreferences("agenda_wa_profile", Context.MODE_PRIVATE).edit().putBoolean("welcome_pending", false).apply()
                     showWelcome = false
                 },
+            )
+        }
+
+        ideaLab?.let { initial ->
+            IdeaLabDialog(
+                initialText = initial,
+                onDismiss = {
+                    ideaLab = null
+                    if (ideaLabFromVoice) { ideaLabFromVoice = false; finishVoice(null) }
+                },
+                onSaveNote = { state.saveNote(it); section = AppSection.AGENDA; tab = 2 },
+                showMessage = showMessage,
             )
         }
 
@@ -748,6 +772,7 @@ private fun AppDrawer(
     onAlarms: () -> Unit,
     onProfile: () -> Unit,
     onSettings: () -> Unit,
+    onIdeaLab: () -> Unit,
 ) {
     ModalDrawerSheet {
         Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -778,6 +803,10 @@ private fun AppDrawer(
                 label = { Text("Clientes y Finanzas") }, icon = { Icon(Icons.Rounded.BusinessCenter, null) },
                 selected = current == AppSection.FINANZAS, onClick = { onSection(AppSection.FINANZAS) },
                 modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            NavigationDrawerItem(
+                label = { Text("Laboratorio de ideas") }, icon = { Icon(Icons.Rounded.Science, null) },
+                selected = false, onClick = onIdeaLab, modifier = Modifier.padding(horizontal = 12.dp),
             )
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(Modifier.padding(horizontal = 24.dp))

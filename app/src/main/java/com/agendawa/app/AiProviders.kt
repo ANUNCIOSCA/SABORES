@@ -127,14 +127,14 @@ object AiClient {
      * Pide una respuesta al proveedor activo. Si falla y hay otros proveedores con clave
      * (y el respaldo está activado), prueba con ellos en orden.
      */
-    fun generate(context: Context, prompt: String, json: Boolean): String {
+    fun generate(context: Context, prompt: String, json: Boolean, image: ByteArray? = null): String {
         val providers = AiSettings.configured(context)
         if (providers.isEmpty()) throw AiException("Falta la clave de IA en Configuración")
         val toTry = if (AiSettings.fallbackEnabled(context)) providers else providers.take(1)
         var lastError: AiException? = null
         for (p in toTry) {
             try {
-                return generateWith(context, p, AiSettings.apiKey(context, p), AiSettings.model(context, p), prompt, json)
+                return generateWith(context, p, AiSettings.apiKey(context, p), AiSettings.model(context, p), prompt, json, image)
             } catch (e: AiException) {
                 lastError = e
             }
@@ -142,15 +142,17 @@ object AiClient {
         throw lastError ?: AiException("No se pudo usar la IA")
     }
 
-    fun generateWith(context: Context, p: AiProvider, key: String, model: String, prompt: String, json: Boolean): String =
+    fun generateWith(
+        context: Context, p: AiProvider, key: String, model: String, prompt: String, json: Boolean, image: ByteArray? = null,
+    ): String =
         try {
-            generateOnce(p, key, model, prompt, json)
+            generateOnce(p, key, model, prompt, json, image)
         } catch (e: AiModelNotFound) {
             // El modelo fue retirado: se busca uno vigente en la cuenta, se guarda y se reintenta una vez
             val replacement = runCatching { pickModel(p, listModels(p, key)) }.getOrNull()
                 ?.takeIf { it != model } ?: throw e
             AiSettings.save(context, p, key, replacement)
-            generateOnce(p, key, replacement, prompt, json)
+            generateOnce(p, key, replacement, prompt, json, image)
         }
 
     /** Elige el mejor modelo de la lista: el sugerido si está, si no el más nuevo de uso general. */
@@ -173,15 +175,20 @@ object AiClient {
         return general.maxOrNull()
     }
 
-    private fun generateOnce(p: AiProvider, key: String, model: String, prompt: String, json: Boolean): String {
+    /** [image]: foto JPEG opcional para que la IA la analice. */
+    private fun generateOnce(p: AiProvider, key: String, model: String, prompt: String, json: Boolean, image: ByteArray?): String {
         if (key.isBlank()) throw AiException("Falta la clave de ${p.label}")
         val finalPrompt = if (json) "$prompt\n\nResponde únicamente con el JSON, sin texto adicional." else prompt
+        val b64 = image?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
         return when (p.protocol) {
             AiProtocol.GEMINI -> {
                 val body = JSONObject().apply {
                     put("contents", JSONArray().put(JSONObject().apply {
                         put("role", "user")
-                        put("parts", JSONArray().put(JSONObject().put("text", finalPrompt)))
+                        put("parts", JSONArray().apply {
+                            if (b64 != null) put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", b64)))
+                            put(JSONObject().put("text", finalPrompt))
+                        })
                     }))
                     put("generationConfig", JSONObject().apply {
                         put("temperature", 0.4)
@@ -200,8 +207,12 @@ object AiClient {
             AiProtocol.ANTHROPIC -> {
                 val body = JSONObject().apply {
                     put("model", model)
-                    put("max_tokens", 2048)
-                    put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", finalPrompt)))
+                    put("max_tokens", 8000)
+                    val content: Any = if (b64 == null) finalPrompt else JSONArray()
+                        .put(JSONObject().put("type", "image").put("source", JSONObject()
+                            .put("type", "base64").put("media_type", "image/jpeg").put("data", b64)))
+                        .put(JSONObject().put("type", "text").put("text", finalPrompt))
+                    put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
                 }
                 val res = post(
                     p, "${p.baseUrl}/messages",
@@ -219,7 +230,10 @@ object AiClient {
             AiProtocol.OPENAI -> {
                 val body = JSONObject().apply {
                     put("model", model)
-                    put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", finalPrompt)))
+                    val content: Any = if (b64 == null) finalPrompt else JSONArray()
+                        .put(JSONObject().put("type", "text").put("text", finalPrompt))
+                        .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64")))
+                    put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content)))
                 }
                 val res = post(p, "${p.baseUrl}/chat/completions", mapOf("Authorization" to "Bearer $key"), body, model)
                 res.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")

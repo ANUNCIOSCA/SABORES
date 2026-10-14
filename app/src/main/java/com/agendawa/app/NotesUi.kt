@@ -206,7 +206,12 @@ fun SmartNoteCard(note: SmartNote, onClick: () -> Unit, onPin: () -> Unit, onDel
 }
 
 @Composable
-fun SmartNoteEditorDialog(request: NoteEditorRequest, onDismiss: () -> Unit, onSave: (SmartNote) -> Unit) {
+fun SmartNoteEditorDialog(
+    request: NoteEditorRequest,
+    onDismiss: () -> Unit,
+    onSave: (SmartNote) -> Unit,
+    onDevelop: ((String) -> Unit)? = null,
+) {
     val context = LocalContext.current
     val existing = request.note
     var title by remember { mutableStateOf(existing?.title ?: request.prefillTitle) }
@@ -284,6 +289,13 @@ fun SmartNoteEditorDialog(request: NoteEditorRequest, onDismiss: () -> Unit, onS
                         if (polishing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                         else { Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Redactar y ordenar con IA") }
                     }
+                }
+                if (aiEnabled && onDevelop != null) {
+                    OutlinedButton(
+                        onClick = { onDevelop(listOf(title, content).filter { it.isNotBlank() }.joinToString("\n")) },
+                        enabled = content.isNotBlank() || title.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("🧪 Desarrollar en el Laboratorio (preguntas + documento .md)") }
                 }
                 Text(
                     if (aiEnabled) "La IA ordena tu idea; \"Organizar\" la clasifica y le pone etiquetas."

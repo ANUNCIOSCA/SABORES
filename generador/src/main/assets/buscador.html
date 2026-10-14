@@ -77,6 +77,8 @@
         .gsrc { font-size: 11px; color: #555; padding: 4px 6px 0; }
         .gbtns { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
         .gbtns .btn { width: 100%; }
+        .gnoprev { aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; font-size: 12px; color: #666; background: #e9eeee; }
+        .glink { font-size: 11px; color: #1a6b8b; padding: 0 6px 6px; word-break: break-all; user-select: text; -webkit-user-select: text; }
         #bgBanner { display: none; align-items: center; gap: 10px; background: #fff; border-radius: 12px; padding: 8px 10px; box-shadow: 0 3px 10px rgba(0,0,0,.18); }
         #bgBanner img { width: 54px; height: 54px; object-fit: cover; border-radius: 8px; }
         #bgBanner span { flex: 1; font-size: 13px; font-weight: 600; color: #0f5a5a; }
@@ -575,7 +577,7 @@ async function showImages(card, g) {
     read.forEach(function (r) {
         (r.art.images || []).forEach(function (u) {
             var key = u.replace(/[?#].*$/, '');
-            if (!seenImg[key]) { seenImg[key] = 1; imgs.push({ url: u, source: r.item.source }); }
+            if (!seenImg[key]) { seenImg[key] = 1; imgs.push({ url: u, source: r.item.source, page: r.art.url || r.item.link }); }
         });
     });
     if (!imgs.length) {
@@ -592,13 +594,26 @@ async function showImages(card, g) {
         cell.innerHTML = '<img loading="lazy" referrerpolicy="no-referrer" src="' + esc(im.url) + '">' +
             '<div class="gsrc">' + esc(im.source) + '</div>' +
             '<div class="gbtns"><button class="btn btn-small" data-g="bg">Usar de fondo</button>' +
-            '<button class="btn btn-small btn-light" data-g="dl">Descargar</button></div>';
-        cell.querySelector('img').onerror = function () { cell.remove(); };
+            '<button class="btn btn-small btn-light" data-g="dl">Descargar</button>' +
+            '<button class="btn btn-small btn-light" data-g="open">Abrir enlace de la imagen</button>' +
+            '<button class="btn btn-small btn-light" data-g="copy">Copiar enlace</button>' +
+            '<button class="btn btn-small btn-light" data-g="page">Ir a la nota</button></div>' +
+            '<div class="glink">' + esc(im.url) + '</div>';
+        // Si el medio no deja mostrar la vista previa, la foto se queda: su enlace sigue sirviendo
+        cell.querySelector('img').onerror = function () {
+            var ph = document.createElement('div');
+            ph.className = 'gnoprev';
+            ph.textContent = 'Vista previa no disponible · usa el enlace';
+            this.replaceWith(ph);
+        };
         cell.querySelector('[data-g="bg"]').onclick = function () {
             chosenBg = im; showBgBanner();
             Array.prototype.forEach.call(grid.querySelectorAll('.gcell'), function (c) { c.classList.remove('picked'); });
             cell.classList.add('picked');
         };
+        cell.querySelector('[data-g="open"]').onclick = function () { openUrl(im.url); };
+        cell.querySelector('[data-g="page"]').onclick = function () { openUrl(im.page); };
+        cell.querySelector('[data-g="copy"]').onclick = function () { copyText(im.url); this.textContent = 'Enlace copiado'; };
         cell.querySelector('[data-g="dl"]').onclick = async function () {
             var btn = this; btn.disabled = true; btn.textContent = 'Descargando...';
             try {
@@ -610,6 +625,17 @@ async function showImages(card, g) {
         };
         grid.appendChild(cell);
     });
+    var links = document.createElement('div');
+    links.innerHTML = '<div class="label">Enlaces de todas las imágenes</div>' +
+        imgs.map(function (im, i) {
+            return '<div class="source-line"><b>' + (i + 1) + '. ' + esc(im.source) + '</b><div class="glink">' + esc(im.url) + '</div></div>';
+        }).join('') +
+        '<div class="actions"><button class="btn btn-small btn-light" data-g="copyall">Copiar todos los enlaces</button></div>';
+    links.querySelector('[data-g="copyall"]').onclick = function () {
+        copyText(imgs.map(function (im, i) { return (i + 1) + '. ' + im.source + ': ' + im.url; }).join('\n'));
+        this.textContent = 'Enlaces copiados';
+    };
+    d.appendChild(links);
 }
 
 // ---------- pasar a la plantilla ----------

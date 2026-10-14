@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BusinessCenter
 import androidx.compose.material.icons.rounded.Clear
@@ -295,7 +296,10 @@ fun SmartNoteEditorDialog(
                         onClick = { onDevelop(listOf(title, content).filter { it.isNotBlank() }.joinToString("\n")) },
                         enabled = content.isNotBlank() || title.isNotBlank(),
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("🧪 Desarrollar en el Laboratorio (preguntas + documento .md)") }
+                    ) {
+                        Icon(Icons.Outlined.Science, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text("Desarrollar en el Laboratorio")
+                    }
                 }
                 Text(
                     if (aiEnabled) "La IA ordena tu idea; \"Organizar\" la clasifica y le pone etiquetas."

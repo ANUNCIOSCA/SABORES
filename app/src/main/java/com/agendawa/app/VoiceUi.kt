@@ -47,6 +47,12 @@ fun rememberSpeaker(): Speaker {
     return speaker
 }
 
+/** "Listo, Moreno." con el nombre del perfil, o sin nombre si no se registró. */
+fun withName(context: Context, phrase: String): String {
+    val name = ProfileStore.name(context)
+    return if (name.isBlank()) "$phrase." else "$phrase, $name."
+}
+
 /** Frase corta para decir y mostrar al guardar algo por voz. */
 fun spokenWhen(millis: Long): String {
     val today = startOfDay(System.currentTimeMillis())

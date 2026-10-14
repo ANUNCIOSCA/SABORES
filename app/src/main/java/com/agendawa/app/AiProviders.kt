@@ -120,6 +120,17 @@ open class AiException(message: String) : Exception(message)
 /** El modelo configurado ya no existe (los proveedores retiran modelos viejos). */
 class AiModelNotFound(message: String) : AiException(message)
 
+/** El proveedor está saturado o limitando (429 / 5xx). Suele pasar en segundos. */
+class AiBusy(message: String) : AiException(message)
+
+/** Modelo alterno del mismo proveedor para cuando el principal está saturado. */
+val AiProvider.backupModel: String
+    get() = when (this) {
+        AiProvider.GEMINI -> "gemini-flash-lite-latest"
+        AiProvider.GROQ -> "llama-3.1-8b-instant"
+        else -> ""
+    }
+
 /** Cliente único para todos los proveedores. Se llama fuera del hilo principal. */
 object AiClient {
 
@@ -153,6 +164,14 @@ object AiClient {
                 ?.takeIf { it != model } ?: throw e
             AiSettings.save(context, p, key, replacement)
             generateOnce(p, key, replacement, prompt, json, image)
+        } catch (e: AiBusy) {
+            // Saturado aun después de reintentar: se prueba el modelo alterno del mismo proveedor
+            val backup = p.backupModel.takeIf { it.isNotBlank() && it != model } ?: throw e
+            try {
+                generateOnce(p, key, backup, prompt, json, image)
+            } catch (_: AiException) {
+                throw e
+            }
         }
 
     /** Elige el mejor modelo de la lista: el sugerido si está, si no el más nuevo de uso general. */
@@ -283,7 +302,21 @@ object AiClient {
     private fun post(p: AiProvider, url: String, headers: Map<String, String>, body: JSONObject, model: String): JSONObject =
         request(p, url, "POST", headers, body, model)
 
+    /** Reintenta sola cuando el proveedor está saturado: espera 2 s y luego 5 s. */
     private fun request(p: AiProvider, url: String, method: String, headers: Map<String, String>, body: JSONObject?, model: String): JSONObject {
+        val waits = listOf(2_000L, 5_000L)
+        var attempt = 0
+        while (true) {
+            try {
+                return requestOnce(p, url, method, headers, body, model)
+            } catch (e: AiBusy) {
+                if (attempt >= waits.size) throw e
+                Thread.sleep(waits[attempt++])
+            }
+        }
+    }
+
+    private fun requestOnce(p: AiProvider, url: String, method: String, headers: Map<String, String>, body: JSONObject?, model: String): JSONObject {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
@@ -303,6 +336,12 @@ object AiClient {
                     val err = JSONObject(raw).opt("error")
                     if (err is JSONObject) err.optString("message") else err?.toString()
                 }.getOrNull()?.takeIf { it.isNotBlank() }
+                if (code == 429 || code in 500..599) {
+                    throw AiBusy(
+                        if (code == 429) "${p.label}: se alcanzó el límite de uso por ahora. Espera un minuto o agrega otro proveedor (por ejemplo Groq, gratis) como respaldo en Configuración."
+                        else "${p.label} está saturado en este momento (mucha gente usándolo). Intenta en un minuto o agrega otro proveedor (por ejemplo Groq, gratis) como respaldo en Configuración.",
+                    )
+                }
                 if (code == 404 && model.isNotBlank()) {
                     throw AiModelNotFound("${p.label}: el modelo \"$model\" ya no está disponible. Toca \"Ver modelos\" y elige otro.")
                 }
@@ -313,7 +352,6 @@ object AiClient {
                         401, 403 -> "la clave no es válida o no tiene permiso. Cópiala de nuevo completa."
                         402 -> "la cuenta no tiene saldo."
                         404 -> "no se encontró la dirección del servicio."
-                        429 -> "se alcanzó el límite de uso. Intenta en un rato."
                         else -> "error $code" + (apiMsg?.let { ": $it" } ?: "")
                     },
                 )

@@ -32,6 +32,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.Celebration
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AddAPhoto
@@ -70,6 +81,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -96,7 +108,7 @@ import java.io.ByteArrayOutputStream
 
 data class IdeaCategory(
     val key: String,
-    val emoji: String,
+    val icon: ImageVector,
     val label: String,
     val subcategories: List<String>,
     /** Cómo debe pensar la IA para esta categoría. */
@@ -112,7 +124,7 @@ private const val PHOTO_HINT = "si hay foto, analiza el espacio y di qué coloca
 
 val ideaCategories = listOf(
     IdeaCategory(
-        "negocio", "🏪", "Negocio",
+        "negocio", Icons.Outlined.Storefront, "Negocio",
         listOf("Peluquería / barbería", "Ferretería", "Farmacia", "Puesto de comida", "Restaurante", "Bodega / abasto",
             "Tienda de ropa", "Panadería / pastelería", "Taller mecánico", "Servicio técnico", "Delivery", "Negocio desde casa"),
         "consultor de negocios con mucha experiencia montando y haciendo crecer pequeños negocios en Venezuela",
@@ -133,7 +145,7 @@ val ideaCategories = listOf(
         SmartNoteType.BUSINESS,
     ),
     IdeaCategory(
-        "web", "🌐", "Página web",
+        "web", Icons.Outlined.Language, "Página web",
         listOf("Página de ventas (landing)", "Web de un negocio", "Tienda online / catálogo", "Portafolio", "Blog / noticias", "Menú digital"),
         "estratega digital y diseñador web senior que crea páginas que venden",
         """
@@ -151,7 +163,7 @@ val ideaCategories = listOf(
         SmartNoteType.PROJECT,
     ),
     IdeaCategory(
-        "app", "📱", "Aplicación",
+        "app", Icons.Outlined.PhoneAndroid, "Aplicación",
         listOf("Reservas / citas", "Pedidos / delivery", "Inventario", "Clientes y ventas", "Educativa", "Comunidad", "Herramienta interna"),
         "product manager y arquitecto de software que convierte ideas en aplicaciones claras y realizables",
         """
@@ -172,7 +184,7 @@ val ideaCategories = listOf(
         SmartNoteType.PROJECT,
     ),
     IdeaCategory(
-        "diseno", "🎨", "Diseño",
+        "diseno", Icons.Outlined.Palette, "Diseño",
         listOf("Logo", "Flyer / publicidad", "Post para redes", "Diseño del local / interiores", "Empaque / etiqueta", "Menú impreso", "Tarjeta de presentación"),
         "director de arte y diseñador senior con ojo comercial",
         """
@@ -191,7 +203,7 @@ val ideaCategories = listOf(
         SmartNoteType.IDEA,
     ),
     IdeaCategory(
-        "imagen", "🖼️", "Imagen / foto",
+        "imagen", Icons.Outlined.Image, "Imagen / foto",
         listOf("Foto de producto", "Foto de comida", "Ambiente de un local", "Personaje", "Publicidad", "Portada"),
         "director de fotografía y experto en generar imágenes con IA",
         """
@@ -208,7 +220,7 @@ val ideaCategories = listOf(
         SmartNoteType.IDEA,
     ),
     IdeaCategory(
-        "asesoria", "🧭", "Asesoría",
+        "asesoria", Icons.Outlined.Explore, "Asesoría",
         listOf("Finanzas personales", "Ventas", "Marketing", "Organización y productividad", "Trámites / legal", "Carrera / trabajo"),
         "asesor experto, práctico y honesto",
         """
@@ -224,7 +236,7 @@ val ideaCategories = listOf(
         SmartNoteType.IDEA,
     ),
     IdeaCategory(
-        "contenido", "📣", "Contenido y redes",
+        "contenido", Icons.Outlined.Campaign, "Contenido y redes",
         listOf("Campaña", "Reels / TikTok", "Carrusel", "Calendario de contenido", "Guion de video", "Lanzamiento"),
         "estratega de contenido y redes sociales que sabe qué detiene el scroll",
         """
@@ -240,7 +252,7 @@ val ideaCategories = listOf(
         SmartNoteType.PROJECT,
     ),
     IdeaCategory(
-        "evento", "🎉", "Evento",
+        "evento", Icons.Outlined.Celebration, "Evento",
         listOf("Cumpleaños", "Lanzamiento", "Taller / curso", "Fiesta", "Feria", "Reunión de trabajo"),
         "organizador de eventos detallista y práctico",
         """
@@ -256,7 +268,7 @@ val ideaCategories = listOf(
         SmartNoteType.PROJECT,
     ),
     IdeaCategory(
-        "otro", "💡", "Otra idea",
+        "otro", Icons.Outlined.Lightbulb, "Otra idea",
         emptyList(),
         "consultor creativo y estratégico",
         """
@@ -439,8 +451,10 @@ fun IdeaLabDialog(
             if (loaded == null) showMessage("No se pudo leer la foto") else { photo = loaded.first; photoPreview = loaded.second }
         }
     }
+    val speaker = rememberSpeaker()
     val dictate = rememberSpeechInput("Cuéntame tu idea con todos los detalles") { text ->
         description = if (description.isBlank()) text.replaceFirstChar { it.uppercase() } else "$description $text"
+        if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Listo") + " Ya tomé tu idea.")
     }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         if (uri != null) runCatching {
@@ -516,7 +530,13 @@ fun IdeaLabDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text("🧪 Laboratorio de ideas", fontWeight = FontWeight.Bold) },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Outlined.Science, null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Laboratorio de ideas", fontWeight = FontWeight.Bold)
+                            }
+                        },
                         navigationIcon = {
                             IconButton(onClick = { goBack() }) {
                                 Icon(if (step == LabStep.CATEGORY) Icons.Rounded.Close else Icons.AutoMirrored.Rounded.ArrowBack, "Atrás")
@@ -563,8 +583,8 @@ fun IdeaLabDialog(
                                         shape = RoundedCornerShape(16.dp),
                                     ) {
                                         Column(Modifier.padding(14.dp)) {
-                                            Text(cat.emoji, style = MaterialTheme.typography.headlineMedium)
-                                            Spacer(Modifier.height(4.dp))
+                                            Icon(cat.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                                            Spacer(Modifier.height(8.dp))
                                             Text(cat.label, fontWeight = FontWeight.SemiBold)
                                         }
                                     }
@@ -574,7 +594,11 @@ fun IdeaLabDialog(
 
                         LabStep.SUB -> {
                             val cat = category!!
-                            Text("${cat.emoji} ${cat.label}: ¿de qué tipo?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(cat.icon, null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("${cat.label}: ¿de qué tipo?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            }
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 cat.subcategories.forEach { s ->
                                     FilterChip(selected = sub == s, onClick = { sub = s; customSub = ""; step = LabStep.DESCRIBE }, label = { Text(s) })
@@ -592,10 +616,14 @@ fun IdeaLabDialog(
 
                         LabStep.DESCRIBE -> {
                             val cat = category!!
-                            Text(
-                                "${cat.emoji} ${cat.label}${if (sub.isNotBlank()) " › $sub" else ""}",
-                                style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(cat.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "${cat.label}${if (sub.isNotBlank()) " › $sub" else ""}",
+                                    style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                             Text("Cuéntame tu idea", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                             OutlinedTextField(
                                 value = description,
@@ -643,7 +671,11 @@ fun IdeaLabDialog(
                             if (photoObservation.isNotBlank()) {
                                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                                     Column(Modifier.padding(14.dp)) {
-                                        Text("📷 Lo que veo en tu foto", fontWeight = FontWeight.SemiBold)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Outlined.PhotoCamera, null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Lo que veo en tu foto", fontWeight = FontWeight.SemiBold)
+                                        }
                                         Spacer(Modifier.height(4.dp))
                                         Text(photoObservation)
                                     }
@@ -712,12 +744,12 @@ fun IdeaLabDialog(
                                             updatedAtMillis = now,
                                         ),
                                     )
-                                    showMessage("💡 Idea guardada en Notas")
+                                    showMessage("Idea guardada en Notas")
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(6.dp)); Text("Guardar en Notas") }
 
-                            Text("📄 Crear documento .md para que otra IA lo desarrolle:", fontWeight = FontWeight.SemiBold)
+                            Text("Crear documento .md para que otra IA lo desarrolle", fontWeight = FontWeight.SemiBold)
                             val targets = (category?.targets.orEmpty() + "Desarrollar el proyecto completo con otra IA").distinct()
                             targets.forEach { t ->
                                 OutlinedButton(onClick = { buildDocument(t) }, modifier = Modifier.fillMaxWidth()) {
@@ -763,7 +795,7 @@ fun IdeaLabDialog(
                             Text(it)
                         }
                     }
-                    error?.let { Text("❌ $it", color = MaterialTheme.colorScheme.error) }
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Spacer(Modifier.height(40.dp))
                 }
             }

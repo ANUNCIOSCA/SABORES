@@ -44,7 +44,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Science
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -417,12 +417,13 @@ fun AgendaWaApp(
         } else if (voiceDone.isNotEmpty()) {
             val summary = voiceDone.joinToString(". ")
             voiceDone.clear()
-            showMessage("✅ $summary")
-            if (VoicePrefs.speakBack(context)) speaker.say("Listo. $summary")
+            showMessage(summary)
+            if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Listo") + " $summary")
         }
     }
 
     val startVoiceReminder = rememberSpeechInput("Dime qué tienes que hacer: llamar, escribir, una reunión, un viaje o una idea") { text ->
+        if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Entendido") + " Ya tomé tu dictado.")
         if (AiSettings.isEnabled(context)) {
             thinking = "Entendiendo lo que dijiste..."
             scope.launch {
@@ -504,7 +505,7 @@ fun AgendaWaApp(
                                 IconButton(onClick = { scope.launch { drawerState.open() } }) { Icon(Icons.Rounded.Menu, "Menú") }
                             },
                             actions = {
-                                IconButton(onClick = { ideaLab = "" }) { Icon(Icons.Rounded.Science, "Laboratorio de ideas") }
+                                IconButton(onClick = { ideaLab = "" }) { Icon(Icons.Outlined.Science, "Laboratorio de ideas") }
                                 IconButton(onClick = startVoiceReminder) { Icon(Icons.Rounded.Mic, "Crear por voz") }
                                 Box {
                                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Rounded.MoreVert, "Más opciones") }
@@ -805,7 +806,7 @@ private fun AppDrawer(
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
             NavigationDrawerItem(
-                label = { Text("Laboratorio de ideas") }, icon = { Icon(Icons.Rounded.Science, null) },
+                label = { Text("Laboratorio de ideas") }, icon = { Icon(Icons.Outlined.Science, null) },
                 selected = false, onClick = onIdeaLab, modifier = Modifier.padding(horizontal = 12.dp),
             )
             Spacer(Modifier.height(8.dp))

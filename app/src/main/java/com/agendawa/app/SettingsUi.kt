@@ -250,7 +250,7 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
                                 scope.launch {
                                     withContext(Dispatchers.IO) { runCatching { AiClient.listModels(provider, apiKey) } }
                                         .onSuccess { modelList = it; if (it.isEmpty()) showMessage("No llegaron modelos para esa clave") }
-                                        .onFailure { testResult = "❌ ${it.message}" }
+                                        .onFailure { testResult = it.message }
                                     loadingModels = false
                                 }
                             },
@@ -272,8 +272,8 @@ fun SettingsDialog(onDismiss: () -> Unit, showMessage: (String) -> Unit) {
                             val p = provider; val k = apiKey; val m = model
                             scope.launch {
                                 testResult = withContext(Dispatchers.IO) {
-                                    runCatching { AiClient.test(context, p, k, m); "✅ ${p.label} conectado y funcionando" }
-                                        .getOrElse { "❌ ${it.message}" }
+                                    runCatching { AiClient.test(context, p, k, m); "Conectado: ${p.label} funciona correctamente" }
+                                        .getOrElse { "Error: ${it.message}" }
                                 }
                                 val used = AiSettings.model(context, p)
                                 if (provider == p && used != m) {

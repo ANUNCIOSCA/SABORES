@@ -36,8 +36,8 @@ data class VoiceIntent(
 ) {
     /** Texto de detalles que se guarda en el recordatorio. */
     fun details(): String = buildList {
-        if (eventMillis > 0) add("🕒 " + formatDate(eventMillis, "EEEE d 'de' MMMM, h:mm a").replaceFirstChar { it.uppercase() })
-        if (location.isNotBlank()) add("📍 $location")
+        if (eventMillis > 0) add("Hora: " + formatDate(eventMillis, "EEEE d 'de' MMMM, h:mm a").replaceFirstChar { it.uppercase() })
+        if (location.isNotBlank()) add("Lugar: $location")
         if (message.isNotBlank()) add(message)
     }.joinToString("\n")
 }

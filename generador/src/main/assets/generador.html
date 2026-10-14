@@ -191,8 +191,15 @@
             display: none;
         }
 
+        .btn-video {
+            background: #c0392b;
+            color: white;
+            display: none;
+        }
+
         .btn-download.visible,
-        .btn-transparent.visible {
+        .btn-transparent.visible,
+        .btn-video.visible {
             display: block;
         }
 
@@ -394,6 +401,14 @@
                 <div class="file-name" id="fileName"></div>
             </div>
 
+            <div class="form-group" id="videoGroup" style="display:none;">
+                <label>🎥 Video (opcional)</label>
+                <label for="videoInput" class="file-input-label">🎬 Toca para elegir video</label>
+                <input type="file" id="videoInput" accept="video/*">
+                <div class="file-name" id="videoName"></div>
+                <div class="counter">El video se recorta al formato elegido y la plantilla queda encima. Se conserva el audio.</div>
+            </div>
+
             <div class="form-group">
                 <label for="titleInput">📝 Título (máx. 2 líneas)</label>
                 <textarea id="titleInput" placeholder="EJ: TERREMOTO 7.5 EN CARACAS" maxlength="120" style="min-height:60px;"></textarea>
@@ -533,6 +548,7 @@
             <button class="btn btn-generate" id="generateBtn">✨ Generar Preview</button>
             <button class="btn btn-download" id="downloadBtn">⬇️ Descargar PNG (con foto)</button>
             <button class="btn btn-transparent" id="transparentBtn">🎬 PNG Transparente (para video)</button>
+            <button class="btn btn-video" id="videoBtn">🎥 Exportar VIDEO con plantilla</button>
             <a href="buscador.html" class="btn btn-buscar-noticias">🔎 Buscar noticias</a>
         </div>
     </div>
@@ -1141,6 +1157,72 @@
             }
         });
 
+        // ================= VIDEO CON PLANTILLA (solo en la app Android) =================
+        var hasVideo = false;
+        var VIDEO_BTN_TEXT = '🎥 Exportar VIDEO con plantilla';
+        if (window.R24Android && window.R24Android.exportVideo) {
+            document.getElementById('videoGroup').style.display = '';
+        }
+
+        document.getElementById('videoInput').addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (!file || !window.R24Android) return;
+            document.getElementById('videoName').textContent = '✓ ' + file.name;
+            hasVideo = true;
+            if (generated) document.getElementById('videoBtn').classList.add('visible');
+            // Un cuadro del video sirve de fondo para el preview
+            var frame = window.R24Android.videoFrame();
+            if (frame) {
+                var img = new Image();
+                img.onload = function() {
+                    userImage = img;
+                    document.getElementById('fileName').textContent = '';
+                    if (generated) render();
+                };
+                img.src = frame;
+            }
+            showMsg('✅ Video cargado. Genera el preview y toca "Exportar VIDEO".', 'ok');
+        });
+
+        window.onVideoProgress = function(p) {
+            document.getElementById('videoBtn').textContent = '⏳ Procesando video... ' + p + '%';
+        };
+        window.onVideoDone = function() {
+            var btn = document.getElementById('videoBtn');
+            btn.disabled = false;
+            btn.textContent = VIDEO_BTN_TEXT;
+            showMsg('✅ Video guardado en la Galería (carpeta Reportalo24).', 'ok');
+        };
+        window.onVideoError = function(err) {
+            var btn = document.getElementById('videoBtn');
+            btn.disabled = false;
+            btn.textContent = VIDEO_BTN_TEXT;
+            showMsg('❌ No se pudo exportar el video: ' + err, 'error');
+        };
+
+        document.getElementById('videoBtn').addEventListener('click', function() {
+            if (!generated) { showMsg('⚠️ Genera el preview primero', 'error'); return; }
+            if (!hasVideo) { showMsg('⚠️ Primero elige un video', 'error'); return; }
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = '⏳ Preparando...';
+            setTimeout(function() {
+                // La plantilla se dibuja sin foto (transparente) y Android la pone encima del video
+                var off = document.createElement('canvas');
+                off.width = W;
+                off.height = H;
+                renderScene(off.getContext('2d'), false);
+                var now = new Date();
+                var ts = now.toISOString().slice(0, 10) + '_' + now.toTimeString().slice(0, 8).replace(/:/g, '-');
+                var res = window.R24Android.exportVideo(off.toDataURL('image/png'), W, H, 'R24_video_' + W + 'x' + H + '_' + ts + '.mp4');
+                if (res !== 'ok') {
+                    window.onVideoError(res);
+                } else {
+                    showMsg('⏳ Procesando video, no cierres la app...', 'ok');
+                }
+            }, 50);
+        });
+
         // ================= FORMATO DE IMAGEN =================
         // Story/Reel: 1080x1920 (9:16) — el de siempre
         // Carrusel:   1080x1080 (1:1) — para el feed
@@ -1246,6 +1328,7 @@
             render();
             document.getElementById('downloadBtn').classList.add('visible');
             document.getElementById('transparentBtn').classList.add('visible');
+            if (hasVideo) document.getElementById('videoBtn').classList.add('visible');
 
             var wrap = document.getElementById('previewWrap');
             var zoomed = wrap.classList.toggle('zoomed');
@@ -1320,6 +1403,7 @@
             updateTitleSizeDisplay(info);
             document.getElementById('downloadBtn').classList.add('visible');
             document.getElementById('transparentBtn').classList.add('visible');
+            if (hasVideo) document.getElementById('videoBtn').classList.add('visible');
             if (info && (info.title1 || info.title2)) {
                 var cual = info.title1 && info.title2 ? 'Las dos líneas del título son' : (info.title1 ? 'La línea 1 del título es' : 'La línea 2 del título es');
                 showMsg('⚠️ ' + cual + ' muy larga y se acortó con "…". Prueba con menos palabras o un tamaño más chico.', 'error');

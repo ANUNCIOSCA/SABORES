@@ -11,8 +11,8 @@ android {
         applicationId = "com.reportalo24.generador"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.4.0"
+        versionCode = 7
+        versionName = "1.5.0"
     }
 
     signingConfigs {
@@ -23,6 +23,13 @@ android {
                 storePassword = System.getenv("AGENDAWA_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("AGENDAWA_KEY_ALIAS")
                 keyPassword = System.getenv("AGENDAWA_KEY_PASSWORD")
+            } else {
+                // Llave fija del repositorio: así cada versión nueva se instala encima de la anterior.
+                // Antes de vender la app, reemplazarla por una llave privada guardada como secreto.
+                storeFile = rootProject.file("signing/r24-apps.jks")
+                storePassword = "r24apps2026"
+                keyAlias = "r24apps"
+                keyPassword = "r24apps2026"
             }
         }
     }
@@ -30,12 +37,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            val ks = System.getenv("AGENDAWA_KEYSTORE")
-            signingConfig = if (ks != null && file(ks).exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

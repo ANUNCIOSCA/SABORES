@@ -12,9 +12,10 @@
             -webkit-tap-highlight-color: transparent;
         }
 
+        /* clip (no hidden): con hidden la vista previa fija deja de quedarse arriba al bajar */
         html, body {
             width: 100%;
-            overflow-x: hidden;
+            overflow-x: clip;
         }
 
         body {
@@ -54,7 +55,7 @@
 
         /* ===== PREVIEW (canvas real, escalado a pantalla) ===== */
         .preview-wrap {
-            width: 100%;
+            width: auto;
             display: flex;
             justify-content: center;
             position: sticky;
@@ -341,6 +342,69 @@
             color: #1e8449;
             background: #e9f7ef;
             border-left: 4px solid #27ae60;
+        }
+
+        /* ===== Adaptación a la pantalla ===== */
+        .toggle-option { min-width: 0; flex: 1 1 0; overflow-wrap: break-word; text-align: center; line-height: 1.25; }
+        .category-toggle .toggle-option { flex: 0 1 auto; }
+        /* Celular: el círculo va arriba del texto para que las tres opciones quepan sin cortar palabras */
+        @media (max-width: 520px) {
+            .logo-toggle:not(.category-toggle) .toggle-option {
+                flex-direction: column; gap: 4px; padding: 10px 4px; font-size: 13px;
+            }
+        }
+        /* Celular vertical: la vista previa se limita por alto para dejar ver el formulario */
+        #previewCanvas {
+            width: auto;
+            max-width: 100%;
+            height: min(36vh, 360px);
+            max-height: none;
+        }
+        .preview-wrap.zoomed #previewCanvas {
+            max-width: 100%;
+            height: min(78vh, 760px);
+        }
+        .form-group input[type="text"],
+        .form-group textarea { font-size: 16px; }
+
+        /* Pantallas anchas (tablet o celular horizontal): vista previa a la izquierda, formulario a la derecha */
+        @media (min-width: 760px) {
+            .content {
+                max-width: 1100px;
+                display: grid;
+                grid-template-columns: minmax(300px, 42%) 1fr;
+                align-items: start;
+                gap: 20px;
+            }
+            .preview-wrap {
+                margin: 0;
+                padding: 12px;
+                top: 8px;
+                border-radius: 14px;
+                box-shadow: none;
+                background: transparent;
+            }
+            #previewCanvas, .preview-wrap.zoomed #previewCanvas {
+                height: auto;
+                width: 100%;
+                max-height: calc(100vh - 120px);
+                object-fit: contain;
+                background: transparent;
+                box-shadow: none;
+            }
+        }
+        /* Celular horizontal (poca altura): vista previa más pequeña */
+        @media (max-height: 520px) and (orientation: landscape) {
+            #previewCanvas { max-height: calc(100vh - 60px); }
+            .header { padding: 8px 16px; }
+            .header p { display: none; }
+        }
+        /* Pantallas muy angostas */
+        @media (max-width: 360px) {
+            .content { padding: 10px; gap: 12px; }
+            .form-section { padding: 12px; }
+            .toggle-option { padding: 10px 8px; font-size: 13px; }
+            .btn { padding: 14px; font-size: 15px; }
         }
 
         @supports(padding: max(0px)) {

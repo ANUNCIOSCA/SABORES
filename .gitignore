@@ -6,3 +6,6 @@ local.properties
 *.keystore
 .idea/
 *.apk
+
+# Llave fija de firma para que las actualizaciones se instalen encima
+!signing/r24-apps.jks

@@ -12,8 +12,8 @@ android {
         applicationId = "com.agendawa.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "2.2.1"
+        versionCode = 23
+        versionName = "2.2.2"
     }
 
     signingConfigs {
@@ -32,6 +32,10 @@ android {
                 keyAlias = "r24apps"
                 keyPassword = "r24apps2026"
             }
+            // Firma clásica (v1) además de la moderna (v2): algunos instaladores de ciertas marcas
+            // rechazan la APK como "paquete no válido" si solo trae la v2.
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 

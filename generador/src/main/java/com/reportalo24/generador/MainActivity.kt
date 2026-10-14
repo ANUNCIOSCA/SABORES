@@ -240,6 +240,51 @@ class MainActivity : ComponentActivity() {
         }
 
         /** true si el archivo existe dentro de la app (assets). */
+        /**
+         * Petición HTTP desde el buscador (Google Noticias, Gemini, Groq) sin las restricciones CORS
+         * del WebView. Corre en otro hilo y responde con window.__r24fetch(id, status, texto); status 0 = error de red.
+         */
+        @JavascriptInterface
+        fun fetch(id: String, method: String, url: String, headersJson: String, body: String) {
+            Thread {
+                var status = 0
+                val text = try {
+                    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                    try {
+                        conn.requestMethod = method
+                        conn.connectTimeout = 15_000
+                        conn.readTimeout = 60_000
+                        conn.setRequestProperty("Accept-Language", "es-VE,es;q=0.9")
+                        val headers = runCatching { JSONObject(headersJson) }.getOrNull()
+                        headers?.keys()?.forEach { k -> conn.setRequestProperty(k, headers.optString(k)) }
+                        if (body.isNotEmpty() && method != "GET") {
+                            conn.doOutput = true
+                            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                        }
+                        status = conn.responseCode
+                        (if (status in 200..299) conn.inputStream else conn.errorStream)
+                            ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                    } finally {
+                        conn.disconnect()
+                    }
+                } catch (e: Exception) {
+                    status = 0
+                    e.message ?: "Sin conexión"
+                }
+                val js = "window.__r24fetch && window.__r24fetch(${JSONObject.quote(id)}, $status, ${JSONObject.quote(text)})"
+                mainHandler.post { webView.evaluateJavascript(js, null) }
+            }.start()
+        }
+
+        /** Abre un enlace (la noticia original) en el navegador del teléfono. */
+        @JavascriptInterface
+        fun openUrl(url: String) {
+            runOnUiThread {
+                runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url))) }
+                    .onFailure { Toast.makeText(this@MainActivity, "No se pudo abrir el enlace", Toast.LENGTH_SHORT).show() }
+            }
+        }
+
         @JavascriptInterface
         fun hasAsset(name: String): Boolean =
             try { assets.open(name).close(); true } catch (e: Exception) { false }

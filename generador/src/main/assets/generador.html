@@ -1255,6 +1255,12 @@
             var t = params.get('title');
             var s = params.get('subtitle');
             var cat = params.get('cat');
+            var tag = params.get('tag');
+            if (tag) {
+                document.getElementById('tagInput').value = tag.slice(0, 30);
+                var tagSi = document.querySelector('input[name="tagMode"][value="si"]');
+                if (tagSi) tagSi.checked = true;
+            }
             if (cat) {
                 var catRadio = document.querySelector('input[name="categoryMode"][value="' + cat + '"]');
                 if (catRadio) catRadio.checked = true;

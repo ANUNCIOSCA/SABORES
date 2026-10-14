@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Repórtalo 24 - Buscar noticias</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { width: 100%; overflow-x: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a3a3a 0%, #0f2e2e 100%);
+            min-height: 100vh; color: #222;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a8b8b 0%, #0f5a5a 100%);
+            color: #fff; padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,.2); position: sticky; top: 0; z-index: 20;
+        }
+        .header h1 { font-size: 18px; font-weight: 700; flex: 1; }
+        .icon-btn {
+            background: rgba(255,255,255,.15); border: none; color: #fff; width: 38px; height: 38px;
+            border-radius: 50%; font-size: 18px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        }
+        .content { padding: 14px; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+        .panel { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+        .search-row { display: flex; gap: 8px; }
+        .search-row input {
+            flex: 1; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; min-width: 0;
+        }
+        .search-row input:focus { outline: none; border-color: #1a8b8b; }
+        .btn {
+            border: none; border-radius: 8px; padding: 12px 14px; font-size: 15px; font-weight: 700; cursor: pointer;
+            background: linear-gradient(135deg, #1a8b8b 0%, #0f5a5a 100%); color: #fff;
+        }
+        .btn:active { transform: scale(.98); }
+        .btn:disabled { opacity: .6; }
+        .btn-red { background: #d61f2c; }
+        .btn-light { background: #eef7f7; color: #0f5a5a; border: 2px solid #1a8b8b; }
+        .btn-small { padding: 8px 10px; font-size: 13px; }
+        .label { font-size: 12px; font-weight: 700; color: #1a8b8b; margin: 10px 0 6px; text-transform: uppercase; letter-spacing: .4px; }
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .chip {
+            padding: 7px 11px; border-radius: 999px; border: 2px solid #e0e0e0; background: #f9f9f9;
+            font-size: 13px; font-weight: 600; color: #555; cursor: pointer;
+        }
+        .chip.on { border-color: #1a8b8b; background: #eef7f7; color: #0f5a5a; }
+        .chip.track { border-style: dashed; }
+        .status { color: #cfe; font-size: 13px; text-align: center; }
+        .card { background: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 3px 10px rgba(0,0,0,.18); }
+        .card h3 { font-size: 16px; line-height: 1.3; margin: 4px 0 6px; color: #111; }
+        .meta { font-size: 12px; color: #777; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+        .badge { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 6px; color: #fff; background: #1a8b8b; }
+        .badge.hot { background: #d61f2c; }
+        .badge.new { background: #8e44ad; }
+        .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .detail { margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; display: none; }
+        .card.open .detail { display: block; }
+        .source-line { font-size: 13px; padding: 6px 0; border-bottom: 1px dashed #eee; }
+        .source-line b { color: #0f5a5a; }
+        .source-line a { color: #1a8b8b; text-decoration: none; font-weight: 600; }
+        .ai-box { background: #f4fbfb; border-left: 4px solid #1a8b8b; border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 14px; line-height: 1.45; }
+        .ai-box h4 { font-size: 13px; color: #0f5a5a; margin: 8px 0 4px; text-transform: uppercase; }
+        .ai-box ul { padding-left: 18px; }
+        .preview-title { font-weight: 900; font-size: 18px; text-transform: uppercase; line-height: 1.05; color: #111; }
+        .preview-sub { margin-top: 6px; font-size: 14px; }
+        .preview-sub .red { color: #d61f2c; font-weight: 700; }
+        .err { color: #c0392b; font-size: 13px; margin-top: 8px; }
+        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 50; align-items: flex-end; justify-content: center; }
+        .modal-bg.show { display: flex; }
+        .modal { background: #fff; width: 100%; max-width: 560px; border-radius: 16px 16px 0 0; padding: 16px; max-height: 90vh; overflow-y: auto; }
+        .modal h2 { font-size: 18px; margin-bottom: 8px; }
+        .modal input, .modal select {
+            width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 15px; margin-bottom: 8px;
+        }
+        .hint { font-size: 12px; color: #777; margin-bottom: 8px; line-height: 1.4; }
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #cfe; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="icon-btn" id="backBtn" aria-label="Volver al generador">&#8592;</button>
+        <h1>Buscar noticias</h1>
+        <button class="icon-btn" id="settingsBtn" aria-label="Configurar IA">&#9881;</button>
+    </div>
+
+    <div class="content">
+        <div class="panel">
+            <div class="search-row">
+                <input type="text" id="q" placeholder="Tema, persona, lugar... (ej. Guárico)" enterkeyhint="search">
+                <button class="btn" id="searchBtn">Buscar</button>
+            </div>
+
+            <div class="label">Temas rápidos</div>
+            <div class="chips" id="topics"></div>
+
+            <div class="label">Cuándo</div>
+            <div class="chips" id="ranges"></div>
+
+            <div class="label">Fuentes</div>
+            <div class="chips" id="sourcesMode"></div>
+
+            <div class="label">Temas que rastreas</div>
+            <div class="chips" id="tracked"></div>
+            <div class="hint" style="margin-top:6px">Busca algo y toca <b>"+ Rastrear este tema"</b>: al abrir el buscador verás cuántas noticias nuevas hay de cada tema.</div>
+            <button class="btn btn-light btn-small" id="trackBtn">+ Rastrear este tema</button>
+        </div>
+
+        <div class="status" id="status"></div>
+        <div id="results" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+
+    <!-- Configuración de IA -->
+    <div class="modal-bg" id="settingsModal">
+        <div class="modal">
+            <h2>IA para redactar</h2>
+            <p class="hint">Opcional. Con una clave de <b>Gemini</b> o <b>Groq</b> (ambas tienen plan gratis), el buscador resume la noticia, cruza lo que dicen los medios y te propone el título y el subtítulo al estilo R24. La clave se guarda solo en este teléfono.</p>
+            <label class="hint">Clave de Gemini (AIza...)</label>
+            <input type="password" id="geminiKey" placeholder="Pega tu clave de Gemini">
+            <label class="hint">Clave de Groq (gsk_...)</label>
+            <input type="password" id="groqKey" placeholder="Pega tu clave de Groq">
+            <label class="hint">Usar primero</label>
+            <select id="aiFirst">
+                <option value="gemini">Gemini</option>
+                <option value="groq">Groq</option>
+            </select>
+            <p class="hint">Claves gratis: aistudio.google.com/apikey · console.groq.com/keys</p>
+            <div style="display:flex;gap:8px">
+                <button class="btn" id="saveSettings" style="flex:1">Guardar</button>
+                <button class="btn btn-light" id="closeSettings">Cerrar</button>
+            </div>
+            <div class="hint" id="settingsMsg" style="margin-top:8px"></div>
+        </div>
+    </div>
+
+<script>
+// =====================================================================
+// Buscador de noticias de Repórtalo 24
+// - Google Noticias (RSS) como motor: reúne cientos de medios y permite
+//   filtrar por medio venezolano con site:
+// - Agrupa la misma noticia publicada por varios medios ("Cubierta por N")
+// - Profundizar: busca la cobertura relacionada de la última semana
+// - IA opcional (Gemini / Groq): resumen, contraste y título R24
+// - Rastrear temas: cuenta lo nuevo desde la última visita
+// =====================================================================
+
+var TOPICS = [
+    { label: 'Venezuela', q: 'Venezuela', cat: 'NACIONAL' },
+    { label: 'Guárico', q: 'Guárico', cat: 'NACIONAL' },
+    { label: 'Caracas', q: 'Caracas', cat: 'NACIONAL' },
+    { label: 'Política', q: 'Venezuela política', cat: 'POLÍTICA' },
+    { label: 'Economía', q: 'Venezuela economía', cat: 'ECONOMÍA' },
+    { label: 'Dólar / BCV', q: 'dólar BCV tasa', cat: 'ECONOMÍA' },
+    { label: 'Sucesos', q: 'Venezuela sucesos', cat: 'NACIONAL' },
+    { label: 'Servicios', q: 'Venezuela apagón agua gasolina', cat: 'NACIONAL' },
+    { label: 'Deportes', q: 'Venezuela deportes vinotinto béisbol', cat: 'DEPORTE' },
+    { label: 'Internacional', q: 'internacional', cat: 'INTERNACIONAL' }
+];
+var RANGES = [
+    { label: 'Última hora', v: '3h' },
+    { label: 'Hoy', v: '1d' },
+    { label: 'Semana', v: '7d' }
+];
+// Medios venezolanos (se buscan dentro de Google Noticias con site:)
+var VE_SITES = ['efectococuyo.com', 'elpitazo.net', 'talcualdigital.com', 'elnacional.com', 'eluniversal.com',
+    'ultimasnoticias.com.ve', 'bancaynegocios.com', '2001online.com', 'cronica.uno', 'runrun.es',
+    'elestimulo.com', 'eldiario.com', 'lapatilla.com', 'descifrado.com', 'elsiglo.com.ve', 'vtv.gob.ve'];
+var SOURCE_MODES = [
+    { label: 'Todas las fuentes', v: 'all' },
+    { label: 'Solo medios venezolanos', v: 've' }
+];
+
+var state = {
+    query: '', cat: 'NACIONAL', range: '1d', mode: 'all',
+    groups: []
+};
+
+// ---------- almacenamiento local (seguro aunque falle) ----------
+function load(key, def) { try { var v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); } catch (e) { return def; } }
+function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
+
+// ---------- red: por Android (sin bloqueos CORS) o fetch del navegador ----------
+var _cb = {}, _seq = 0;
+window.__r24fetch = function (id, status, text) {
+    var c = _cb[id]; if (c) { delete _cb[id]; c(status, text); }
+};
+function httpRequest(method, url, headers, body) {
+    return new Promise(function (resolve, reject) {
+        if (window.R24Android && window.R24Android.fetch) {
+            var id = 'f' + (++_seq);
+            _cb[id] = function (status, text) {
+                if (status === 0) reject(new Error(text || 'Sin conexión'));
+                else resolve({ status: status, text: text });
+            };
+            window.R24Android.fetch(id, method, url, JSON.stringify(headers || {}), body || '');
+        } else {
+            fetch(url, { method: method, headers: headers || {}, body: body || undefined })
+                .then(function (r) { return r.text().then(function (t) { resolve({ status: r.status, text: t }); }); })
+                .catch(reject);
+        }
+    });
+}
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+// ---------- utilidades ----------
+function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
+function norm(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]/g, ' ');
+}
+var STOP = {};
+('el la los las un una unos unas de del al a en y o u que se por para con sin sobre tras su sus es son fue ser ha han '
+ + 'este esta estos estas ese esa eso lo le les mas muy como cuando donde ya no si tambien entre hasta desde '
+ + 'segun ante bajo contra durante mediante hoy ayer tras cual quien venezuela venezolano venezolana').split(' ')
+    .forEach(function (w) { STOP[w] = 1; });
+function keywords(title) {
+    return norm(title).split(/\s+/).filter(function (w) { return w.length > 3 && !STOP[w]; });
+}
+function timeAgo(d) {
+    var m = Math.round((Date.now() - d.getTime()) / 60000);
+    if (isNaN(m)) return '';
+    if (m < 1) return 'ahora';
+    if (m < 60) return 'hace ' + m + ' min';
+    var h = Math.round(m / 60);
+    if (h < 24) return 'hace ' + h + ' h';
+    return 'hace ' + Math.round(h / 24) + ' d';
+}
+function setStatus(html) { document.getElementById('status').innerHTML = html; }
+
+// ---------- Google Noticias ----------
+function buildQuery(q, range, mode) {
+    var full = q;
+    if (mode === 've') full += ' (' + VE_SITES.map(function (s) { return 'site:' + s; }).join(' OR ') + ')';
+    if (range) full += ' when:' + range;
+    return 'https://news.google.com/rss/search?q=' + encodeURIComponent(full) + '&hl=es-419&gl=VE&ceid=VE:es-419';
+}
+
+function parseRss(xml) {
+    var doc = new DOMParser().parseFromString(xml, 'text/xml');
+    var items = Array.prototype.slice.call(doc.querySelectorAll('item'));
+    return items.map(function (it) {
+        var get = function (sel) { var n = it.querySelector(sel); return n ? n.textContent.trim() : ''; };
+        var srcNode = it.querySelector('source');
+        var source = srcNode ? srcNode.textContent.trim() : '';
+        var title = get('title');
+        // Google agrega " - Medio" al final del titular
+        if (source && title.slice(-(source.length + 3)) === ' - ' + source) title = title.slice(0, -(source.length + 3));
+        return {
+            title: title,
+            link: get('link'),
+            date: new Date(get('pubDate')),
+            source: source || 'Fuente',
+            sourceUrl: srcNode ? srcNode.getAttribute('url') : ''
+        };
+    }).filter(function (x) { return x.title; });
+}
+
+async function fetchNews(q, range, mode) {
+    var res = await httpRequest('GET', buildQuery(q, range, mode), { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) R24' });
+    if (res.status !== 200) throw new Error('Google Noticias respondió ' + res.status);
+    return parseRss(res.text);
+}
+
+// Agrupa la misma noticia publicada por varios medios
+function groupItems(items) {
+    var groups = [];
+    items.forEach(function (it) {
+        var kw = keywords(it.title);
+        var best = null, bestScore = 0;
+        groups.forEach(function (g) {
+            var inter = kw.filter(function (w) { return g.kw.indexOf(w) >= 0; }).length;
+            var score = inter / Math.max(1, Math.min(kw.length, g.kw.length));
+            if (score > bestScore) { bestScore = score; best = g; }
+        });
+        if (best && bestScore >= 0.5) {
+            best.items.push(it);
+        } else {
+            groups.push({ kw: kw, items: [it] });
+        }
+    });
+    groups.forEach(function (g) {
+        g.items.sort(function (a, b) { return b.date - a.date; });
+        var sources = {};
+        g.items.forEach(function (i) { sources[i.source] = 1; });
+        g.sourceCount = Object.keys(sources).length;
+        g.latest = g.items[0].date;
+        var hours = (Date.now() - g.latest.getTime()) / 3600000;
+        g.score = g.sourceCount * 2 + (hours < 3 ? 4 : hours < 12 ? 2 : hours < 24 ? 1 : 0);
+        g.title = g.items[0].title;
+    });
+    groups.sort(function (a, b) { return b.score - a.score || b.latest - a.latest; });
+    return groups;
+}
+
+// ---------- búsqueda principal ----------
+async function search() {
+    var q = document.getElementById('q').value.trim() || state.query || 'Venezuela';
+    state.query = q;
+    document.getElementById('q').value = q;
+    setStatus('<span class="spinner"></span> Rastreando noticias de "' + esc(q) + '"...');
+    document.getElementById('results').innerHTML = '';
+    try {
+        var items = await fetchNews(q, state.range, state.mode);
+        state.groups = groupItems(items);
+        markSeen(q, items);
+        if (!state.groups.length) {
+            setStatus('No encontré noticias de "' + esc(q) + '" en ese período. Prueba con "Semana" o con otras palabras.');
+            return;
+        }
+        setStatus(items.length + ' noticias de ' + countSources(items) + ' medios · agrupadas en ' + state.groups.length + ' historias');
+        renderGroups();
+    } catch (e) {
+        setStatus('No pude buscar: ' + esc(e.message) + '. Revisa tu conexión e intenta de nuevo.');
+    }
+}
+function countSources(items) {
+    var s = {}; items.forEach(function (i) { s[i.source] = 1; }); return Object.keys(s).length;
+}
+
+function renderGroups() {
+    var box = document.getElementById('results');
+    box.innerHTML = '';
+    state.groups.slice(0, 40).forEach(function (g, idx) {
+        var hours = (Date.now() - g.latest.getTime()) / 3600000;
+        var card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML =
+            '<div class="meta">' +
+            (g.sourceCount >= 3 ? '<span class="badge hot">TENDENCIA</span>' : '') +
+            (hours < 3 ? '<span class="badge new">ÚLTIMA HORA</span>' : '') +
+            '<span class="badge">' + g.sourceCount + (g.sourceCount === 1 ? ' medio' : ' medios') + '</span>' +
+            '<span>' + esc(g.items[0].source) + ' · ' + timeAgo(g.latest) + '</span></div>' +
+            '<h3>' + esc(g.title) + '</h3>' +
+            '<div class="actions">' +
+            '<button class="btn btn-small" data-act="use">Usar en plantilla</button>' +
+            '<button class="btn btn-small btn-light" data-act="more">Ver cobertura</button>' +
+            '<button class="btn btn-small btn-light" data-act="deep">Profundizar</button>' +
+            '<button class="btn btn-small btn-red" data-act="ai">Redactar con IA</button>' +
+            '</div>' +
+            '<div class="detail"></div>';
+        card.querySelector('[data-act="use"]').onclick = function () { useInTemplate(g.title, '', state.cat, ''); };
+        card.querySelector('[data-act="more"]').onclick = function () { toggleCoverage(card, g); };
+        card.querySelector('[data-act="deep"]').onclick = function () { deepen(card, g); };
+        card.querySelector('[data-act="ai"]').onclick = function () { aiWrite(card, g, false); };
+        box.appendChild(card);
+    });
+}
+
+function coverageHtml(items) {
+    return items.map(function (i) {
+        return '<div class="source-line"><b>' + esc(i.source) + '</b> · ' + timeAgo(i.date) + '<br>' + esc(i.title) +
+            ' <a href="#" data-url="' + esc(i.link) + '">Abrir</a></div>';
+    }).join('');
+}
+function bindLinks(el) {
+    Array.prototype.forEach.call(el.querySelectorAll('a[data-url]'), function (a) {
+        a.onclick = function (ev) { ev.preventDefault(); openUrl(a.getAttribute('data-url')); };
+    });
+}
+function openUrl(url) {
+    if (window.R24Android && window.R24Android.openUrl) window.R24Android.openUrl(url);
+    else window.open(url, '_blank');
+}
+function toggleCoverage(card, g) {
+    var d = card.querySelector('.detail');
+    if (card.classList.contains('open') && d.dataset.kind === 'cov') { card.classList.remove('open'); return; }
+    d.dataset.kind = 'cov';
+    d.innerHTML = '<div class="label" style="margin-top:0">Cómo lo cuenta cada medio</div>' + coverageHtml(g.items);
+    bindLinks(d);
+    card.classList.add('open');
+}
+
+// Profundizar: busca la cobertura relacionada de la última semana (antecedentes y seguimiento)
+async function deepen(card, g) {
+    var d = card.querySelector('.detail');
+    d.dataset.kind = 'deep';
+    card.classList.add('open');
+    var kw = g.kw.slice(0, 5).join(' ');
+    d.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Buscando antecedentes y seguimiento...';
+    try {
+        var items = await fetchNews(kw, '7d', 'all');
+        var seen = {};
+        g.items.forEach(function (i) { seen[i.link] = 1; });
+        var extra = items.filter(function (i) { return !seen[i.link]; }).sort(function (a, b) { return a.date - b.date; });
+        g.related = extra;
+        d.innerHTML = '<div class="label" style="margin-top:0">Línea de tiempo (7 días) · ' + extra.length + ' notas relacionadas</div>' +
+            (extra.length ? coverageHtml(extra) : '<div class="hint">No hay más cobertura relacionada esta semana.</div>') +
+            '<div class="actions"><button class="btn btn-small btn-red" data-act="aideep">Analizar todo con IA</button></div>';
+        bindLinks(d);
+        d.querySelector('[data-act="aideep"]').onclick = function () { aiWrite(card, g, true); };
+    } catch (e) {
+        d.innerHTML = '<div class="err">No pude profundizar: ' + esc(e.message) + '</div>';
+    }
+}
+
+// ---------- pasar a la plantilla ----------
+function useInTemplate(title, subtitle, cat, tag) {
+    var p = new URLSearchParams();
+    p.set('title', title.toUpperCase());
+    if (subtitle) p.set('subtitle', subtitle);
+    if (cat) p.set('cat', cat);
+    if (tag) p.set('tag', tag.toUpperCase());
+    window.location.href = 'generador.html?' + p.toString();
+}
+
+// ---------- IA (Gemini / Groq) ----------
+function aiSettings() {
+    return { gemini: load('r24_gemini_key', ''), groq: load('r24_groq_key', ''), first: load('r24_ai_first', 'gemini') };
+}
+function aiProviders() {
+    var s = aiSettings(), list = [];
+    var gem = { name: 'Gemini', key: s.gemini, kind: 'gemini', models: ['gemini-flash-latest', 'gemini-flash-lite-latest'] };
+    var grq = { name: 'Groq', key: s.groq, kind: 'groq', models: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile'] };
+    (s.first === 'groq' ? [grq, gem] : [gem, grq]).forEach(function (p) { if (p.key) list.push(p); });
+    return list;
+}
+async function aiCall(prompt) {
+    var providers = aiProviders();
+    if (!providers.length) throw new Error('Configura tu clave de Gemini o Groq (botón ⚙ arriba).');
+    var lastErr = null;
+    for (var p of providers) {
+        for (var model of p.models) {
+            for (var attempt = 0; attempt < 3; attempt++) {
+                try {
+                    var res;
+                    if (p.kind === 'gemini') {
+                        res = await httpRequest('POST',
+                            'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent',
+                            { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
+                            JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                                generationConfig: { temperature: 0.5, responseMimeType: 'application/json' } }));
+                    } else {
+                        res = await httpRequest('POST', 'https://api.groq.com/openai/v1/chat/completions',
+                            { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + p.key },
+                            JSON.stringify({ model: model, messages: [{ role: 'user', content: prompt }],
+                                response_format: { type: 'json_object' } }));
+                    }
+                    if (res.status === 429 || res.status >= 500) {
+                        lastErr = new Error(p.name + ' está saturado (' + res.status + ')');
+                        await sleep(attempt === 0 ? 2000 : 5000);
+                        continue;
+                    }
+                    if (res.status === 404) { lastErr = new Error(p.name + ': modelo ' + model + ' no disponible'); break; }
+                    if (res.status !== 200) {
+                        lastErr = new Error(p.name + ': error ' + res.status + (res.status === 400 || res.status === 401 || res.status === 403 ? ' (revisa la clave)' : ''));
+                        break;
+                    }
+                    var j = JSON.parse(res.text), text = '';
+                    if (p.kind === 'gemini') {
+                        (j.candidates[0].content.parts || []).forEach(function (part) { if (!part.thought) text += part.text || ''; });
+                    } else {
+                        text = j.choices[0].message.content;
+                    }
+                    var a = text.indexOf('{'), b = text.lastIndexOf('}');
+                    return JSON.parse(text.slice(a, b + 1));
+                } catch (e) {
+                    lastErr = e;
+                    break;
+                }
+            }
+        }
+    }
+    throw lastErr || new Error('No se pudo usar la IA');
+}
+
+function buildPrompt(g, deep) {
+    var lines = g.items.map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; });
+    var rel = (deep && g.related ? g.related : []).map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; });
+    return [
+        'Eres el editor jefe de Repórtalo 24 (@reportalo24), medio digital venezolano. Estilo: directo, de alto impacto,',
+        'que detiene el scroll en Instagram y WhatsApp, con filo crítico, PERO sin inventar, exagerar ni afirmar lo que',
+        'los titulares no dicen. Si algo no está confirmado, dilo.',
+        '',
+        'Titulares de distintos medios sobre la misma historia:',
+        lines.join('\n'),
+        rel.length ? '\nCobertura relacionada de los últimos 7 días (antecedentes y seguimiento):\n' + rel.slice(0, 25).join('\n') : '',
+        '',
+        'Responde SOLO un JSON con:',
+        '{',
+        ' "linea1": "primera línea del título, MAYÚSCULAS, máx. 22 caracteres",',
+        ' "linea2": "segunda línea del título, MAYÚSCULAS, máx. 22 caracteres",',
+        ' "subtitulo": "máx. 200 caracteres con el dato que más duele; envuelve UNA frase clave en **dobles asteriscos**",',
+        ' "categoria": "NACIONAL | ECONOMÍA | POLÍTICA | DEPORTE | INTERNACIONAL",',
+        ' "etiqueta": "máx. 18 caracteres, ej. ÚLTIMA HORA, SUCESOS, ALERTA, EXCLUSIVO",',
+        ' "resumen": "3-4 frases con lo que se sabe",',
+        ' "datos_clave": ["cifras, nombres, lugares y fechas que aparecen"],',
+        ' "contraste": "en qué coinciden y en qué difieren los medios (vacío si solo hay uno)",',
+        ' "verificar": ["lo que falta confirmar antes de publicar"],',
+        ' "alternativas": ["otros 2 títulos posibles de una línea"]',
+        '}'
+    ].join('\n');
+}
+
+function renderSub(s) {
+    return esc(s).replace(/\*\*(.+?)\*\*/g, '<span class="red">$1</span>');
+}
+
+async function aiWrite(card, g, deep) {
+    var d = card.querySelector('.detail');
+    var previous = deep ? d.innerHTML : '';
+    d.dataset.kind = deep ? 'deep' : 'ai';
+    card.classList.add('open');
+    var box = document.createElement('div');
+    box.className = 'ai-box';
+    box.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Redactando al estilo R24...';
+    if (!deep) d.innerHTML = '';
+    d.appendChild(box);
+    try {
+        var r = await aiCall(buildPrompt(g, deep));
+        var title = [r.linea1, r.linea2].filter(Boolean).join('\n');
+        var list = function (arr) { return (arr || []).length ? '<ul>' + arr.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '<div class="hint">—</div>'; };
+        box.innerHTML =
+            '<div class="preview-title">' + esc(r.linea1 || '') + '<br>' + esc(r.linea2 || '') + '</div>' +
+            '<div class="preview-sub">' + renderSub(r.subtitulo || '') + '</div>' +
+            '<div class="meta" style="margin-top:6px"><span class="badge hot">' + esc(r.etiqueta || '') + '</span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
+            '<div class="actions"><button class="btn btn-small" data-act="useai">Usar en plantilla</button>' +
+            '<button class="btn btn-small btn-light" data-act="again">Otra versión</button></div>' +
+            '<h4>Resumen</h4><div>' + esc(r.resumen || '') + '</div>' +
+            '<h4>Datos clave</h4>' + list(r.datos_clave) +
+            (r.contraste ? '<h4>Qué dicen los medios</h4><div>' + esc(r.contraste) + '</div>' : '') +
+            '<h4>Verificar antes de publicar</h4>' + list(r.verificar) +
+            '<h4>Otros títulos</h4>' + list(r.alternativas);
+        var cats = ['NACIONAL', 'ECONOMÍA', 'POLÍTICA', 'DEPORTE', 'INTERNACIONAL'];
+        var cat = cats.indexOf((r.categoria || '').toUpperCase()) >= 0 ? r.categoria.toUpperCase() : state.cat;
+        box.querySelector('[data-act="useai"]').onclick = function () { useInTemplate(title || g.title, r.subtitulo || '', cat, r.etiqueta || ''); };
+        box.querySelector('[data-act="again"]').onclick = function () { box.remove(); aiWrite(card, g, deep); };
+    } catch (e) {
+        box.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+    }
+}
+
+// ---------- temas rastreados ----------
+function trackedTopics() { return load('r24_tracked', []); }
+function markSeen(q, items) {
+    var topics = trackedTopics();
+    var t = topics.find(function (x) { return x.q.toLowerCase() === q.toLowerCase(); });
+    if (t) { t.lastSeen = Date.now(); save('r24_tracked', topics); }
+}
+async function refreshTracked() {
+    var box = document.getElementById('tracked');
+    var topics = trackedTopics();
+    box.innerHTML = topics.length ? '' : '<span class="hint">Todavía no rastreas ningún tema.</span>';
+    topics.forEach(function (t) {
+        var chip = document.createElement('span');
+        chip.className = 'chip track';
+        chip.innerHTML = esc(t.q) + ' <span class="cnt"></span> <b data-x="1">✕</b>';
+        chip.onclick = function (ev) {
+            if (ev.target.getAttribute('data-x')) {
+                save('r24_tracked', trackedTopics().filter(function (x) { return x.q !== t.q; }));
+                refreshTracked();
+                return;
+            }
+            document.getElementById('q').value = t.q;
+            search();
+        };
+        box.appendChild(chip);
+        // Cuenta lo nuevo desde la última vez que se miró ese tema
+        fetchNews(t.q, '1d', 'all').then(function (items) {
+            var fresh = items.filter(function (i) { return i.date.getTime() > (t.lastSeen || 0); }).length;
+            chip.querySelector('.cnt').innerHTML = fresh ? '<span class="badge new">' + fresh + ' nuevas</span>' : '';
+        }).catch(function () {});
+    });
+}
+
+// ---------- interfaz ----------
+function renderChips(id, list, isOn, onPick) {
+    var box = document.getElementById(id);
+    box.innerHTML = '';
+    list.forEach(function (item) {
+        var c = document.createElement('span');
+        c.className = 'chip' + (isOn(item) ? ' on' : '');
+        c.textContent = item.label;
+        c.onclick = function () { onPick(item); };
+        box.appendChild(c);
+    });
+}
+function drawFilters() {
+    renderChips('topics', TOPICS, function (t) { return t.q === state.query; }, function (t) {
+        state.query = t.q; state.cat = t.cat; document.getElementById('q').value = t.q; drawFilters(); search();
+    });
+    renderChips('ranges', RANGES, function (r) { return r.v === state.range; }, function (r) {
+        state.range = r.v; save('r24_range', r.v); drawFilters(); search();
+    });
+    renderChips('sourcesMode', SOURCE_MODES, function (m) { return m.v === state.mode; }, function (m) {
+        state.mode = m.v; save('r24_mode', m.v); drawFilters(); search();
+    });
+}
+
+document.getElementById('searchBtn').onclick = function () { state.query = ''; search(); };
+document.getElementById('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { state.query = ''; search(); } });
+document.getElementById('backBtn').onclick = function () {
+    if (history.length > 1) history.back(); else window.location.href = 'generador.html';
+};
+document.getElementById('trackBtn').onclick = function () {
+    var q = (document.getElementById('q').value || state.query).trim();
+    if (!q) return;
+    var topics = trackedTopics();
+    if (!topics.some(function (x) { return x.q.toLowerCase() === q.toLowerCase(); })) {
+        topics.push({ q: q, lastSeen: Date.now() });
+        save('r24_tracked', topics);
+    }
+    refreshTracked();
+};
+document.getElementById('settingsBtn').onclick = function () {
+    var s = aiSettings();
+    document.getElementById('geminiKey').value = s.gemini;
+    document.getElementById('groqKey').value = s.groq;
+    document.getElementById('aiFirst').value = s.first;
+    document.getElementById('settingsMsg').textContent = '';
+    document.getElementById('settingsModal').classList.add('show');
+};
+document.getElementById('closeSettings').onclick = function () { document.getElementById('settingsModal').classList.remove('show'); };
+document.getElementById('saveSettings').onclick = function () {
+    save('r24_gemini_key', document.getElementById('geminiKey').value.trim());
+    save('r24_groq_key', document.getElementById('groqKey').value.trim());
+    save('r24_ai_first', document.getElementById('aiFirst').value);
+    document.getElementById('settingsMsg').textContent = aiProviders().length ? 'Guardado. La IA está lista.' : 'Guardado. Sin claves, el buscador funciona igual pero sin redactar.';
+};
+
+state.range = load('r24_range', '1d');
+state.mode = load('r24_mode', 'all');
+state.query = 'Venezuela';
+drawFilters();
+refreshTracked();
+search();
+</script>
+</body>
+</html>

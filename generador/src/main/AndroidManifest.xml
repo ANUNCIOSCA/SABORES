@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- El buscador de noticias y la IA necesitan internet -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Solo Android 8 y 9 necesitan permiso para guardar en la galería -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"

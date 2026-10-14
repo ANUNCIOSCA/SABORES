@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Repórtalo 24 - Generador</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a3a3a 0%, #0f2e2e 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a8b8b 0%, #0f5a5a 100%);
+            color: white;
+            padding: 14px 16px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .header h1 {
+            font-size: 19px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 2px;
+        }
+
+        .content {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* ===== PREVIEW (canvas real, escalado a pantalla) ===== */
+        .preview-wrap {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            position: sticky;
+            top: 0;
+            z-index: 30;
+            background: linear-gradient(135deg, #1a3a3a 0%, #0f2e2e 100%);
+            padding: 10px 0 14px;
+            margin: -16px -16px 0;
+            padding-left: 16px;
+            padding-right: 16px;
+            box-shadow: 0 10px 18px -8px rgba(0, 0, 0, 0.5);
+        }
+
+        #previewCanvas {
+            width: 100%;
+            max-width: 200px;
+            height: auto;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+            background: #111;
+            display: block;
+        }
+
+        /* ===== FORM ===== */
+        .form-section {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: #1a8b8b;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .form-group input[type="text"],
+        .form-group textarea {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 16px;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .form-group input[type="text"]:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #1a8b8b;
+            box-shadow: 0 0 0 3px rgba(26, 139, 139, 0.12);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 90px;
+            line-height: 1.5;
+        }
+
+        .counter {
+            font-size: 12px;
+            color: #888;
+            margin-top: 6px;
+        }
+
+        .file-input-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            border: 2px dashed #1a8b8b;
+            border-radius: 8px;
+            background: #f9f9f9;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a8b8b;
+            cursor: pointer;
+        }
+
+        .file-input-label:active {
+            background: #eef7f7;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-name {
+            font-size: 12px;
+            color: #555;
+            margin-top: 8px;
+            text-align: center;
+            word-break: break-all;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-generate {
+            background: linear-gradient(135deg, #1a8b8b 0%, #0f5a5a 100%);
+            color: white;
+        }
+
+        .btn-download {
+            background: #27ae60;
+            color: white;
+            display: none;
+        }
+
+        .btn-transparent {
+            background: #8e44ad;
+            color: white;
+            display: none;
+        }
+
+        .btn-download.visible,
+        .btn-transparent.visible {
+            display: block;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+        }
+
+        .stepper-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stepper-row input[type="range"] {
+            flex: 1;
+        }
+
+        .stepper-btn {
+            flex-shrink: 0;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 2px solid #1a8b8b;
+            background: #eef7f7;
+            color: #1a8b8b;
+            font-size: 24px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .stepper-btn:active {
+            background: #1a8b8b;
+            color: white;
+        }
+
+        .btn-zoom {
+            width: 100%;
+            margin-top: 10px;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: #0f5a5a;
+            color: white;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .btn-zoom:active {
+            transform: scale(0.98);
+        }
+
+        .btn-zoom.active {
+            background: #8e44ad;
+        }
+
+        .preview-wrap.zoomed #previewCanvas {
+            max-width: 340px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 36px;
+            accent-color: #1a8b8b;
+            cursor: pointer;
+        }
+
+        .logo-toggle {
+            display: flex;
+            gap: 10px;
+        }
+
+        .category-toggle {
+            flex-wrap: wrap;
+        }
+
+        .category-toggle .toggle-option {
+            flex: 0 0 auto;
+            padding: 10px 14px;
+            font-size: 13px;
+        }
+
+        .toggle-option {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #555;
+            cursor: pointer;
+            background: #f9f9f9;
+        }
+
+        .toggle-option input {
+            accent-color: #1a8b8b;
+            width: 18px;
+            height: 18px;
+        }
+
+        .toggle-option:has(input:checked) {
+            border-color: #1a8b8b;
+            background: #eef7f7;
+            color: #1a8b8b;
+        }
+
+        .msg {
+            font-size: 13px;
+            padding: 12px;
+            border-radius: 6px;
+            display: none;
+            margin-bottom: 14px;
+        }
+
+        .msg.visible {
+            display: block;
+        }
+
+        .msg-error {
+            color: #c0392b;
+            background: #fdecea;
+            border-left: 4px solid #e74c3c;
+        }
+
+        .msg-success {
+            color: #1e8449;
+            background: #e9f7ef;
+            border-left: 4px solid #27ae60;
+        }
+
+        @supports(padding: max(0px)) {
+            .content {
+                padding-left: max(16px, env(safe-area-inset-left));
+                padding-right: max(16px, env(safe-area-inset-right));
+                padding-bottom: max(20px, env(safe-area-inset-bottom));
+            }
+        }
+        .btn-buscar-noticias {
+            background: #16323a;
+            color: white;
+            display: block;
+            text-align: center;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📰 Repórtalo 24</h1>
+        <p>Generador de Noticias · @reportalo24</p>
+    </div>
+
+    <div class="content">
+        <!-- PREVIEW: es el canvas REAL de 1080x1920 (9:16), escalado visualmente -->
+        <div class="preview-wrap" id="previewWrap">
+            <canvas id="previewCanvas" width="1080" height="1920"></canvas>
+        </div>
+
+        <div class="form-section">
+            <div id="msgBox" class="msg"></div>
+
+            <div class="form-group">
+                <label>🔤 Línea 1 del título <span id="titleSize1Value">62px</span></label>
+                <div class="stepper-row">
+                    <button type="button" class="stepper-btn" id="titleSize1Down" aria-label="Achicar línea 1">−</button>
+                    <input type="range" id="titleSize1" min="20" max="120" step="1" value="62">
+                    <button type="button" class="stepper-btn" id="titleSize1Up" aria-label="Agrandar línea 1">+</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>🔤 Línea 2 del título <span id="titleSize2Value">62px</span></label>
+                <div class="stepper-row">
+                    <button type="button" class="stepper-btn" id="titleSize2Down" aria-label="Achicar línea 2">−</button>
+                    <input type="range" id="titleSize2" min="20" max="120" step="1" value="62">
+                    <button type="button" class="stepper-btn" id="titleSize2Up" aria-label="Agrandar línea 2">+</button>
+                </div>
+                <button type="button" class="btn btn-zoom" id="zoomBtn">🔍 Guardar y ver de cerca</button>
+                <div class="counter">Cada línea tiene su propia flechita: puedes hacer la línea 1 más grande que la 2, o al revés. "Guardar y ver de cerca" te lo muestra ampliado.</div>
+            </div>
+
+            <div class="form-group">
+                <label>📷 Imagen (desde galería/archivos)</label>
+                <label for="imageInput" class="file-input-label">📁 Toca para elegir imagen</label>
+                <input type="file" id="imageInput" accept="image/*">
+                <div class="file-name" id="fileName"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="titleInput">📝 Título (máx. 2 líneas)</label>
+                <textarea id="titleInput" placeholder="EJ: TERREMOTO 7.5 EN CARACAS" maxlength="120" style="min-height:60px;"></textarea>
+                <div class="counter" id="titleCounter">0/120</div>
+                <div class="counter">💡 Presiona Enter donde quieras que corte la frase. El título siempre se acomoda en 2 líneas.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="subtitleInput">✍️ Subtítulo</label>
+                <textarea id="subtitleInput" placeholder="Descripción breve... Escribe **la palabra clave** para resaltarla en rojo" maxlength="220"></textarea>
+                <div class="counter" id="subtitleCounter">0/220</div>
+                <div class="counter">🔴 Envuelve una palabra o frase en **dobles asteriscos** y sale resaltada en rojo dentro del subtítulo.</div>
+                <div class="counter">💡 Presiona Enter donde quieras que el texto baje de línea (máx. 4 líneas). Si no pones Enter, se acomoda solo.</div>
+            </div>
+
+            <div class="form-group">
+                <label>🏷️ Categoría (arriba a la derecha)</label>
+                <div class="logo-toggle category-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="categoryMode" value="ninguna" checked>
+                        <span>Ninguna</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="categoryMode" value="NACIONAL">
+                        <span>Nacional</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="categoryMode" value="ECONOMÍA">
+                        <span>Economía</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="categoryMode" value="POLÍTICA">
+                        <span>Política</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="categoryMode" value="DEPORTE">
+                        <span>Deporte</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="categoryMode" value="INTERNACIONAL">
+                        <span>Internacional</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>🔴 Etiqueta roja (arriba del título)</label>
+                <div class="logo-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="tagMode" value="si" checked>
+                        <span>Sí</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="tagMode" value="no">
+                        <span>No</span>
+                    </label>
+                </div>
+                <input type="text" id="tagInput" placeholder="EJ: REPORTE DEL DÍA" maxlength="30" value="REPORTE DEL DÍA" style="margin-top:10px;">
+                <div class="counter">Cámbiala: ÚLTIMA HORA · POLÍTICA · SUCESOS · INTERNACIONAL...</div>
+            </div>
+
+            <div class="form-group">
+                <div class="counter">🎨 Difuminado fijo: Verde oscuro</div>
+            </div>
+
+            <div class="form-group">
+                <label>🔡 Tamaño del subtítulo: <span id="subtitleSizeValue">35</span>px</label>
+                <div class="logo-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="subtitleSizeMode" value="50">
+                        <span>Full</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="subtitleSizeMode" value="43">
+                        <span>Medio Full</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="subtitleSizeMode" value="35" checked>
+                        <span>Medio</span>
+                    </label>
+                </div>
+                <input type="hidden" id="subtitleSize" value="35">
+                <div class="counter">Se ajusta automáticamente si no cabe (se actualiza en vivo)</div>
+            </div>
+
+            <div class="form-group">
+                <label>📏 Interlineado del título: <span id="titleLineHeightValue">0.90</span> (fijo)</label>
+                <input type="hidden" id="titleLineHeight" value="0.90">
+                <div class="counter">Separación fija entre líneas — ya no se mueve al escrolear</div>
+            </div>
+
+            <div class="form-group">
+                <label>📏 Interlineado del subtítulo: <span id="subtitleLineHeightValue">0.90</span> (fijo)</label>
+                <input type="hidden" id="subtitleLineHeight" value="0.90">
+                <div class="counter">Separación fija entre líneas — ya no se mueve al escrolear</div>
+            </div>
+
+            <div class="form-group">
+                <label>↕️ Posición del texto: <span id="posValue">50</span></label>
+                <div class="logo-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="textPositionMode" value="100">
+                        <span>Full</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="textPositionMode" value="75">
+                        <span>Medio Full</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="textPositionMode" value="50" checked>
+                        <span>Medio</span>
+                    </label>
+                </div>
+                <input type="hidden" id="textPosition" value="50">
+                <div class="counter">Full = más cerca del medio · Medio = posición estándar</div>
+            </div>
+
+            <div class="form-group">
+                <label>📐 Formato de imagen</label>
+                <div class="logo-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="formatMode" value="story" checked>
+                        <span>Story/Reel (1080×1920)</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="formatMode" value="carrusel">
+                        <span>Carrusel (1080×1080)</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="formatMode" value="feed">
+                        <span>Feed vertical (1080×1350)</span>
+                    </label>
+                </div>
+                <div class="counter">Story/Reel: Estados de WhatsApp, Reels y TikTok · Carrusel: posts cuadrados · Feed vertical: post 4:5, el más grande que permite Instagram en el feed</div>
+            </div>
+
+            <button class="btn btn-generate" id="generateBtn">✨ Generar Preview</button>
+            <button class="btn btn-download" id="downloadBtn">⬇️ Descargar PNG (con foto)</button>
+            <button class="btn btn-transparent" id="transparentBtn">🎬 PNG Transparente (para video)</button>
+            <a href="buscador.html" class="btn btn-buscar-noticias">🔎 Buscar noticias</a>
+        </div>
+    </div>
+
+    <script>
+        // ================= CONFIG =================
+        var W = 1080;           // ancho exacto del post
+        var H = 1920;           // alto exacto del post (9:16 — Reels/Stories/TikTok)
+        var TEAL = '22, 162, 179';
+
+        var canvas = document.getElementById('previewCanvas');
+        var ctx = canvas.getContext('2d');
+
+        var userImage = null;   // Image() del usuario
+        var generated = false;
+
+        // Pantalla inicial del canvas
+        function drawPlaceholder() {
+            ctx.fillStyle = '#10201f';
+            ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = 'rgba(255,255,255,0.55)';
+            ctx.font = '600 44px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Carga una imagen y toca', W / 2, H / 2 - 30);
+            ctx.fillText('GENERAR PREVIEW', W / 2, H / 2 + 40);
+        }
+        drawPlaceholder();
+
+        // ================= HELPERS =================
+        function showMsg(text, type) {
+            var box = document.getElementById('msgBox');
+            box.textContent = text;
+            box.className = 'msg visible ' + (type === 'error' ? 'msg-error' : 'msg-success');
+            if (type !== 'error') {
+                setTimeout(function() { box.className = 'msg'; }, 3000);
+            }
+        }
+
+        function hideMsg() {
+            document.getElementById('msgBox').className = 'msg';
+        }
+
+        // Divide texto en líneas que caben en maxWidth.
+        // Si respectManualBreaks=true, primero respeta los Enter que puso el usuario
+        // (cada "párrafo" se ajusta aparte); si no, los Enter se tratan como espacio (como antes).
+        function wrapText(c, text, font, maxWidth, respectManualBreaks) {
+            c.font = font;
+            var paragraphs = respectManualBreaks ? text.split('\n') : [text];
+            var lines = [];
+            for (var p = 0; p < paragraphs.length; p++) {
+                var words = paragraphs[p].trim().split(/\s+/).filter(function(w) { return w.length > 0; });
+                var current = '';
+                for (var i = 0; i < words.length; i++) {
+                    var test = current ? current + ' ' + words[i] : words[i];
+                    if (c.measureText(test).width > maxWidth && current) {
+                        lines.push(current);
+                        current = words[i];
+                    } else {
+                        current = test;
+                    }
+                }
+                if (current) lines.push(current);
+            }
+            return lines;
+        }
+
+        // ===== PALABRA CLAVE EN ROJO DENTRO DEL SUBTÍTULO (sintaxis **palabra**) =====
+        // Convierte "Perdieron **87 mil dólares** en la subasta" en una lista de
+        // tokens (una por palabra) marcando cuáles van en rojo (hot: true).
+        // Los \n (Enter que pone Moreno) se guardan como tokens de "corte manual" (isBreak: true)
+        // para que wrapTokens los respete como fin de línea, en vez de tratarlos como espacio.
+        function parseSubtitleTokens(text) {
+            var tokens = [];
+            function pushWords(str, hot) {
+                var parts = str.split('\n');
+                for (var p = 0; p < parts.length; p++) {
+                    if (p > 0) tokens.push({ text: '', hot: false, isBreak: true });
+                    var words = parts[p].split(/\s+/).filter(function(w) { return w.length > 0; });
+                    for (var i = 0; i < words.length; i++) tokens.push({ text: words[i], hot: hot });
+                }
+            }
+            var regex = /\*\*(.+?)\*\*/g;
+            var lastIndex = 0, match;
+            while ((match = regex.exec(text)) !== null) {
+                if (match.index > lastIndex) pushWords(text.slice(lastIndex, match.index), false);
+                pushWords(match[1], true);
+                lastIndex = regex.lastIndex;
+            }
+            if (lastIndex < text.length) pushWords(text.slice(lastIndex), false);
+            return tokens;
+        }
+
+        // Igual que wrapText, pero trabaja con tokens (conserva cuál palabra es roja)
+        // en vez de un string plano.
+        function wrapTokens(c2, tokens, font, maxWidth) {
+            c2.font = font;
+            var lines = [], current = [], currentText = '';
+            for (var i = 0; i < tokens.length; i++) {
+                if (tokens[i].isBreak) {
+                    lines.push(current);
+                    current = [];
+                    currentText = '';
+                    continue;
+                }
+                var w = tokens[i].text;
+                var test = currentText ? currentText + ' ' + w : w;
+                if (c2.measureText(test).width > maxWidth && currentText) {
+                    lines.push(current);
+                    current = [tokens[i]];
+                    currentText = w;
+                } else {
+                    current.push(tokens[i]);
+                    currentText = test;
+                }
+            }
+            if (current.length || lines.length === 0) lines.push(current);
+            return lines;
+        }
+
+        // Igual que fitLines, pero para tokens (mismo auto-ajuste de tamaño y mismo
+        // piso de seguridad — nunca se sale del margen).
+        function fitTokenLines(c2, tokens, weight, startSize, minSize, maxLines, absoluteMin, availW) {
+            function lineText(line) { return line.map(function(t) { return t.text; }).join(' '); }
+            function tryFit(size) {
+                var f = weight + ' ' + size + 'px sans-serif';
+                var lines = wrapTokens(c2, tokens, f, availW);
+                c2.font = f;
+                var tooWide = false;
+                for (var k = 0; k < lines.length; k++) {
+                    if (c2.measureText(lineText(lines[k])).width > availW) { tooWide = true; break; }
+                }
+                if (!tooWide && lines.length <= maxLines) return { lines: lines, size: size, font: f };
+                return null;
+            }
+            var size;
+            for (size = startSize; size >= minSize; size -= 4) {
+                var ok = tryFit(size);
+                if (ok) return ok;
+            }
+            for (size = minSize - 2; size >= absoluteMin; size -= 2) {
+                var ok2 = tryFit(size);
+                if (ok2) return ok2;
+            }
+            // Último recurso: al tamaño mínimo, corta con "…" para que NUNCA se salga del margen
+            var f2 = weight + ' ' + absoluteMin + 'px sans-serif';
+            c2.font = f2;
+            var lines2 = wrapTokens(c2, tokens, f2, availW);
+            var truncated = false;
+            if (lines2.length > maxLines) {
+                lines2 = lines2.slice(0, maxLines);
+                truncated = true;
+            }
+            var lastIdx = lines2.length - 1;
+            var lastLine = lines2[lastIdx] || [];
+            if (truncated || c2.measureText(lineText(lastLine)).width > availW) {
+                while (lastLine.length > 0 && c2.measureText(lineText(lastLine) + '…').width > availW) {
+                    lastLine.pop();
+                }
+                lastLine.push({ text: '…', hot: false });
+                lines2[lastIdx] = lastLine;
+                truncated = true;
+            }
+            return { lines: lines2, size: absoluteMin, font: f2, truncated: truncated };
+        }
+
+        // Dibuja imagen tipo "cover" (llena todo sin deformar)
+        function drawImageCover(c, img) {
+            var iw = img.naturalWidth, ih = img.naturalHeight;
+            var scale = Math.max(W / iw, H / ih);
+            var sw = W / scale, sh = H / scale;
+            var sx = (iw - sw) / 2;
+            var sy = (ih - sh) / 2;
+            c.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+        }
+
+        // ================= RENDER PRINCIPAL =================
+        // c = contexto | withPhoto = post completo / capa transparente | withLogo = dibujar o no el logo
+        function renderScene(c, withPhoto) {
+            var title = document.getElementById('titleInput').value.trim().toUpperCase();
+            var subtitle = document.getElementById('subtitleInput').value.trim();
+
+            c.clearRect(0, 0, W, H);
+
+            // 1. FOTO a pantalla completa (cover, sin márgenes) — solo en modo con foto
+            if (withPhoto) {
+                if (userImage) {
+                    drawImageCover(c, userImage);
+                } else {
+                    c.fillStyle = '#10201f';
+                    c.fillRect(0, 0, W, H);
+                }
+            }
+            // En modo transparente NO se dibuja fondo: queda transparente para el video
+
+            // 2. POSICIONES DEL TEXTO (según el control deslizante)
+            // Márgenes de SEGURIDAD para redes (Instagram/TikTok): 110px por lado
+            var padX = 110;
+            var maxTextW = W - padX * 2;
+            var footerY = H - 70;
+
+            // Elevación graduable: 0 = abajo (como antes), 100 = cerca del medio
+            var slider = parseInt(document.getElementById('textPosition').value, 10) || 0;
+            var lift = (slider / 100) * (H * 0.33);
+
+            // --- AUTO-AJUSTE: reduce la fuente hasta que el texto quepa en la zona segura ---
+            // 1) Prueba desde startSize hasta minSize (rango del preset/slider elegido).
+            // 2) Si aún no entra, sigue bajando hasta absoluteMin (piso de seguridad).
+            // 3) Si ni así entra, corta la última línea con "…" — nunca se sale de los márgenes.
+            function fitLines(c2, text, weight, startSize, minSize, maxLines, absoluteMin, respectManualBreaks, availW) {
+                function tryFit(size) {
+                    var f = weight + ' ' + size + 'px sans-serif';
+                    var lines = wrapText(c2, text, f, availW, respectManualBreaks);
+                    c2.font = f;
+                    var tooWide = false;
+                    for (var k = 0; k < lines.length; k++) {
+                        if (c2.measureText(lines[k]).width > availW) { tooWide = true; break; }
+                    }
+                    if (!tooWide && lines.length <= maxLines) return { lines: lines, size: size, font: f };
+                    return null;
+                }
+
+                var size;
+                for (size = startSize; size >= minSize; size -= 4) {
+                    var ok = tryFit(size);
+                    if (ok) return ok;
+                }
+                for (size = minSize - 2; size >= absoluteMin; size -= 2) {
+                    var ok2 = tryFit(size);
+                    if (ok2) return ok2;
+                }
+
+                // Último recurso: al tamaño mínimo absoluto, corta con "…" para que NUNCA se salga del margen
+                var f2 = weight + ' ' + absoluteMin + 'px sans-serif';
+                c2.font = f2;
+                var lines2 = wrapText(c2, text, f2, availW, respectManualBreaks);
+                var truncated = false;
+                if (lines2.length > maxLines) {
+                    lines2 = lines2.slice(0, maxLines);
+                    truncated = true;
+                }
+                var lastIdx = lines2.length - 1;
+                var last = lines2[lastIdx] || '';
+                if (truncated || c2.measureText(last).width > availW) {
+                    while (last.length > 0 && c2.measureText(last + '…').width > availW) {
+                        last = last.slice(0, -1);
+                    }
+                    lines2[lastIdx] = last.replace(/\s+$/, '') + '…';
+                    truncated = true;
+                }
+                return { lines: lines2, size: absoluteMin, font: f2, truncated: truncated };
+            }
+
+            // El título tiene un poco más de ancho disponible que el subtítulo/etiqueta
+            // (margen de 70px en vez de 110px), así el tamaño máximo en 2 líneas puede ser más grande.
+            var titlePadX = 70;
+            var titleMaxW = W - titlePadX * 2;
+
+
+            // Subtítulo: arranca en el tamaño elegido con el slider, baja hasta -10px, luego hasta 16px si hace falta, máx 4 líneas
+            var subStart = parseInt(document.getElementById('subtitleSize').value, 10) || 36;
+            var subMin = Math.max(18, subStart - 10);
+            var subTokens = subtitle ? parseSubtitleTokens(subtitle) : [];
+            var subFit = subTokens.length ? fitTokenLines(c, subTokens, '400', subStart, subMin, 4, 16, maxTextW) : { lines: [], size: subStart, font: '400 ' + subStart + 'px sans-serif' };
+            var subLines = subFit.lines; // cada línea es un array de tokens {text, hot}
+            var subLineHMult = parseFloat(document.getElementById('subtitleLineHeight').value) || 0.90;
+            var subLineH = Math.round(subFit.size * subLineHMult);
+            var subBottom = footerY - 45 - 40 - lift;
+            var subTop = subBottom - (subLines.length - 1) * subLineH;
+
+            // Título: SIEMPRE máximo 2 líneas, cada una con SU PROPIO tamaño (dos flechitas independientes).
+            // 1) Primero se decide QUÉ texto va en cada línea: si Moreno puso Enter, respeta ese corte;
+            //    si no, se calcula un corte automático razonable.
+            // 2) Luego cada línea se dibuja al tamaño que Moreno eligió para ESA línea (con su propia
+            //    flechita), y solo se achica sola si esa línea puntual no cabe en el ancho seguro.
+            function fitSingleLine(c2, text, weight, chosenSize, floorSize, availW) {
+                if (!text) return { text: '', size: chosenSize, font: weight + ' ' + chosenSize + 'px sans-serif', truncated: false };
+                for (var s = chosenSize; s >= floorSize; s -= 2) {
+                    var f = weight + ' ' + s + 'px sans-serif';
+                    c2.font = f;
+                    if (c2.measureText(text).width <= availW) return { text: text, size: s, font: f, truncated: false };
+                }
+                var f2 = weight + ' ' + floorSize + 'px sans-serif';
+                c2.font = f2;
+                var t = text;
+                while (t.length > 0 && c2.measureText(t + '…').width > availW) { t = t.slice(0, -1); }
+                return { text: t.replace(/\s+$/, '') + '…', size: floorSize, font: f2, truncated: true };
+            }
+
+            var titleLine1Text = '', titleLine2Text = '';
+            if (title) {
+                if (title.indexOf('\n') !== -1) {
+                    var tparts = title.split('\n');
+                    titleLine1Text = tparts[0].trim();
+                    titleLine2Text = (tparts[1] || '').trim();
+                } else {
+                    var splitFit = fitLines(c, title, '900', 70, 30, 2, 22, false, titleMaxW);
+                    titleLine1Text = splitFit.lines[0] || '';
+                    titleLine2Text = splitFit.lines[1] || '';
+                }
+            }
+
+            var titleSize1Chosen = parseInt(document.getElementById('titleSize1').value, 10) || 62;
+            var titleSize2Chosen = parseInt(document.getElementById('titleSize2').value, 10) || 62;
+            var line1Fit = fitSingleLine(c, titleLine1Text, '900', titleSize1Chosen, 22, titleMaxW);
+            var line2Fit = fitSingleLine(c, titleLine2Text, '900', titleSize2Chosen, 22, titleMaxW);
+
+            var titleLineHMult = parseFloat(document.getElementById('titleLineHeight').value) || 0.90;
+            var lineH1 = Math.round(line1Fit.size * titleLineHMult);
+            var lineH2 = Math.round(line2Fit.size * titleLineHMult);
+            var hasLine2 = !!titleLine2Text;
+
+            var titleBottom = subTop - subLineH - 24; // y de la línea 2 (o de la única línea, si no hay línea 2)
+            var titleTop;
+            if (hasLine2) {
+                var titleGap = Math.round(((line1Fit.size + line2Fit.size) / 2) * titleLineHMult);
+                titleTop = titleBottom - titleGap;
+            } else {
+                titleTop = titleBottom;
+            }
+
+            // Tope superior de seguridad: el texto nunca sube más allá del 30% de la imagen
+            var minTop = H * 0.30;
+            if (titleTop < minTop) {
+                var push = minTop - titleTop;
+                titleTop += push; titleBottom += push;
+                subTop += push; subBottom += push;
+            }
+
+            // --- ETIQUETA ROJA (posición, arriba del título) ---
+            var tagSel = document.querySelector('input[name="tagMode"]:checked');
+            var tagOn = tagSel ? (tagSel.value === 'si') : false;
+            var tagText = (document.getElementById('tagInput').value || '').trim().toUpperCase();
+            if (!tagText) tagOn = false;
+
+            // Auto-ajuste: si el texto de la etiqueta no cabe en el margen seguro, se achica sola
+            // (antes se quedaba fija y el texto se salía del cuadro/márgenes).
+            var tagBaseSize = 40; // apenas un poco más grande que el original (38px), sin exagerar
+            var tagFont = '800 ' + tagBaseSize + 'px sans-serif';
+            var tagH = Math.round(tagBaseSize * 1.83);
+            var tagPadX = Math.round(tagBaseSize * 0.94);
+            if (tagOn) {
+                var tagFloor = 22;
+                var tagFitSize = null;
+                for (var ts = tagBaseSize; ts >= tagFloor; ts -= 2) {
+                    var tf = '800 ' + ts + 'px sans-serif';
+                    c.font = tf;
+                    if (c.measureText(tagText).width + Math.round(ts * 0.94) * 2 <= maxTextW) {
+                        tagFitSize = ts;
+                        break;
+                    }
+                }
+                if (tagFitSize === null) {
+                    // Ni al mínimo cabe: corta con "…" para que nunca se salga del margen
+                    var tf2 = '800 ' + tagFloor + 'px sans-serif';
+                    c.font = tf2;
+                    var padMin = Math.round(tagFloor * 0.94);
+                    var t = tagText;
+                    while (t.length > 0 && c.measureText(t + '…').width + padMin * 2 > maxTextW) {
+                        t = t.slice(0, -1);
+                    }
+                    tagText = t.replace(/\s+$/, '') + '…';
+                    tagFitSize = tagFloor;
+                }
+                tagFont = '800 ' + tagFitSize + 'px sans-serif';
+                tagH = Math.round(tagFitSize * 1.83);
+                tagPadX = Math.round(tagFitSize * 0.94);
+            }
+
+            var tagBottom = titleTop - line1Fit.size - 30;
+            var tagTop = tagBottom - tagH;
+
+            // 3. DEGRADADO DINÁMICO — arranca justo arriba del título y sigue al texto
+            // Fijo: Verde + Oscuro (ya no hay selector, se quitó azul y claro/medio)
+            var midOp = 0.95, botOp = 1.0;
+
+            var topC = TEAL, midC = '22, 150, 165', botC = '15, 113, 125'; // verde (teal de marca real)
+
+            var overlayTop = tagOn ? tagTop : (titleTop - lineH1);
+            var gradStart = Math.min(H * 0.62, overlayTop - 60);
+            if (gradStart < 0) gradStart = 0;
+            var botOpEdge = Math.min(botOp + 0.08, 1); // punta de abajo: color puro y sólido
+            // Parada temprana: justo donde arranca el título/etiqueta ya queda bastante oscuro,
+            // en vez de esperar al 45% del degradado — así el texto nunca se pierde contra fotos claras.
+            var earlyStop = Math.min(0.22, 70 / Math.max(1, H - gradStart));
+            var grad = c.createLinearGradient(0, gradStart, 0, H);
+            grad.addColorStop(0, 'rgba(' + topC + ', 0)');
+            grad.addColorStop(earlyStop, 'rgba(' + midC + ', ' + (midOp * 0.6).toFixed(2) + ')');
+            grad.addColorStop(0.45, 'rgba(' + midC + ', ' + midOp + ')');
+            grad.addColorStop(0.82, 'rgba(' + botC + ', ' + botOp + ')');
+            grad.addColorStop(1, 'rgba(' + botC + ', ' + botOpEdge + ')');
+            c.fillStyle = grad;
+            c.fillRect(0, gradStart, W, H - gradStart);
+
+            // 4. TEXTOS
+            c.textAlign = 'center';
+
+            // --- Footer (siempre abajo) ---
+            c.strokeStyle = 'rgba(255,255,255,0.45)';
+            c.lineWidth = 3;
+            c.beginPath();
+            c.moveTo(padX, footerY - 45);
+            c.lineTo(W - padX, footerY - 45);
+            c.stroke();
+
+            var now = new Date();
+            var fecha = now.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            c.font = '600 30px sans-serif';
+            c.fillStyle = 'rgba(255,255,255,0.95)';
+            c.shadowColor = 'rgba(0,0,0,0.6)';
+            c.shadowBlur = 6;
+            c.textAlign = 'left';
+            c.fillText(fecha, padX, footerY);
+            c.textAlign = 'right';
+            c.font = '800 30px sans-serif';
+            c.fillText('@REPORTALO24', W - padX, footerY);
+            c.shadowBlur = 0;
+            c.textAlign = 'center';
+
+            // --- Subtítulo (blanco, con la(s) palabra(s) clave en rojo) ---
+            c.font = subFit.font;
+            c.shadowColor = 'rgba(0,0,0,0.9)';
+            c.shadowBlur = 14;
+            c.shadowOffsetY = 3;
+            c.textAlign = 'left'; // centramos a mano para poder pintar palabra por palabra
+            for (var i = 0; i < subLines.length; i++) {
+                var lineTokens = subLines[i];
+                var lineText = lineTokens.map(function(t) { return t.text; }).join(' ');
+                var lineW = c.measureText(lineText).width;
+                var lx = W / 2 - lineW / 2;
+                var ly = subTop + i * subLineH;
+                for (var j = 0; j < lineTokens.length; j++) {
+                    var tok = lineTokens[j];
+                    var piece = tok.text + (j < lineTokens.length - 1 ? ' ' : '');
+                    c.fillStyle = tok.hot ? '#ff3b30' : 'rgba(255,255,255,0.98)';
+                    c.fillText(piece, lx, ly);
+                    lx += c.measureText(piece).width;
+                }
+            }
+            c.textAlign = 'center';
+            c.shadowOffsetY = 0;
+
+            // --- Título (línea 1 y línea 2, cada una con su propio tamaño) ---
+            c.lineJoin = 'round';
+            c.strokeStyle = 'rgba(0,0,0,0.55)';
+            if (titleLine1Text) {
+                c.font = line1Fit.font;
+                c.lineWidth = Math.max(2, Math.round(line1Fit.size * 0.06));
+                c.strokeText(line1Fit.text, W / 2, titleTop);
+            }
+            if (titleLine2Text) {
+                c.font = line2Fit.font;
+                c.lineWidth = Math.max(2, Math.round(line2Fit.size * 0.06));
+                c.strokeText(line2Fit.text, W / 2, titleBottom);
+            }
+            c.fillStyle = '#ffffff';
+            c.shadowColor = 'rgba(0,0,0,0.95)';
+            c.shadowBlur = 24;
+            c.shadowOffsetY = 4;
+            if (titleLine1Text) {
+                c.font = line1Fit.font;
+                c.fillText(line1Fit.text, W / 2, titleTop);
+            }
+            if (titleLine2Text) {
+                c.font = line2Fit.font;
+                c.fillText(line2Fit.text, W / 2, titleBottom);
+            }
+            c.shadowBlur = 0;
+            c.shadowOffsetY = 0;
+
+            // --- ETIQUETA ROJA (dibujo) ---
+            if (tagOn) {
+                c.font = tagFont;
+                var tw = c.measureText(tagText).width;
+                var bw = Math.min(tw + tagPadX * 2, maxTextW);
+                var bx = (W - bw) / 2;
+                var by = tagTop;
+                var rr = 14;
+
+                c.save();
+                c.shadowColor = 'rgba(0,0,0,0.45)';
+                c.shadowBlur = 10;
+                c.fillStyle = '#d61f2c';
+                c.beginPath();
+                c.moveTo(bx + rr, by);
+                c.lineTo(bx + bw - rr, by);
+                c.arcTo(bx + bw, by, bx + bw, by + rr, rr);
+                c.lineTo(bx + bw, by + tagH - rr);
+                c.arcTo(bx + bw, by + tagH, bx + bw - rr, by + tagH, rr);
+                c.lineTo(bx + rr, by + tagH);
+                c.arcTo(bx, by + tagH, bx, by + tagH - rr, rr);
+                c.lineTo(bx, by + rr);
+                c.arcTo(bx, by, bx + rr, by, rr);
+                c.closePath();
+                c.fill();
+                c.restore();
+
+                c.font = tagFont;
+                c.fillStyle = '#ffffff';
+                c.textAlign = 'center';
+                c.textBaseline = 'middle';
+                c.fillText(tagText, W / 2, by + tagH / 2 + 2);
+                c.textBaseline = 'alphabetic';
+            }
+
+            // 4. CATEGORÍA (pastilla roja, arriba a la derecha)
+            var catSel = document.querySelector('input[name="categoryMode"]:checked');
+            var catText = catSel ? catSel.value : 'ninguna';
+            if (catText !== 'ninguna') {
+                var catMaxW = W * 0.42; // nunca ocupa más de ~42% del ancho
+                var catBaseSize = 30, catFloor = 18;
+                var catFitSize = catFloor;
+                for (var cs = catBaseSize; cs >= catFloor; cs -= 2) {
+                    c.font = '800 ' + cs + 'px sans-serif';
+                    if (c.measureText(catText).width + Math.round(cs * 0.85) * 2 <= catMaxW) { catFitSize = cs; break; }
+                }
+                var catFont = '800 ' + catFitSize + 'px sans-serif';
+                var catPadX = Math.round(catFitSize * 0.85);
+                var catH = Math.round(catFitSize * 1.9);
+                c.font = catFont;
+                var catTw = c.measureText(catText).width;
+                var catBw = Math.min(catTw + catPadX * 2, catMaxW);
+                var catTop = 160, catRight = 40, crr = 12;
+                var catBx = W - catRight - catBw;
+                var catBy = catTop;
+
+                c.save();
+                c.shadowColor = 'rgba(0,0,0,0.45)';
+                c.shadowBlur = 10;
+                c.fillStyle = '#d61f2c';
+                c.beginPath();
+                c.moveTo(catBx + crr, catBy);
+                c.lineTo(catBx + catBw - crr, catBy);
+                c.arcTo(catBx + catBw, catBy, catBx + catBw, catBy + crr, crr);
+                c.lineTo(catBx + catBw, catBy + catH - crr);
+                c.arcTo(catBx + catBw, catBy + catH, catBx + catBw - crr, catBy + catH, crr);
+                c.lineTo(catBx + crr, catBy + catH);
+                c.arcTo(catBx, catBy + catH, catBx, catBy + catH - crr, crr);
+                c.lineTo(catBx, catBy + crr);
+                c.arcTo(catBx, catBy, catBx + crr, catBy, crr);
+                c.closePath();
+                c.fill();
+                c.restore();
+
+                c.fillStyle = '#ffffff';
+                c.textAlign = 'center';
+                c.textBaseline = 'middle';
+                c.fillText(catText, catBx + catBw / 2, catBy + catH / 2 + 2);
+                c.textBaseline = 'alphabetic';
+                c.textAlign = 'center';
+            }
+
+            return { title1: !!line1Fit.truncated, title2: !!line2Fit.truncated, line1RealSize: line1Fit.size, line2RealSize: line2Fit.size };
+        }
+
+        // Actualiza el número junto a cada flechita para que muestre la VERDAD:
+        // si esa línea es larga y tuvo que achicarse para caber, lo dice.
+        function updateOneLineDisplay(inputId, valueId, realSize) {
+            var requested = document.getElementById(inputId).value;
+            var span = document.getElementById(valueId);
+            if (realSize && realSize < parseInt(requested, 10)) {
+                span.textContent = requested + 'px (se achicó a ' + realSize + 'px para caber)';
+            } else {
+                span.textContent = requested + 'px';
+            }
+        }
+        function updateTitleSizeDisplay(info) {
+            if (!info) return;
+            updateOneLineDisplay('titleSize1', 'titleSize1Value', info.line1RealSize);
+            updateOneLineDisplay('titleSize2', 'titleSize2Value', info.line2RealSize);
+        }
+
+        function render() {
+            var info = renderScene(ctx, true);
+            generated = true;
+            updateTitleSizeDisplay(info);
+            if (info && (info.title1 || info.title2)) {
+                var cual = info.title1 && info.title2 ? 'Las dos líneas del título son' : (info.title1 ? 'La línea 1 del título es' : 'La línea 2 del título es');
+                showMsg('⚠️ ' + cual + ' muy larga y se acortó con "…". Prueba con menos palabras o un tamaño más chico.', 'error');
+            }
+        }
+
+        // Descarga un canvas como PNG
+        function downloadCanvas(cnv, prefix) {
+            var url = cnv.toDataURL('image/png');
+            var now = new Date();
+            var ts = now.toISOString().slice(0, 10) + '_' + now.toTimeString().slice(0, 5).replace(':', '-');
+            // Dentro de la app Android: se guarda directo en la Galería (carpeta Reportalo24)
+            if (window.R24Android) {
+                var res = window.R24Android.savePng(url, prefix + '_' + ts + '.png');
+                if (res !== 'ok') throw new Error(res);
+                return;
+            }
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = prefix + '_' + ts + '.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // En la app Android, avisa si el buscador todavía no viene incluido
+        document.querySelector('.btn-buscar-noticias').addEventListener('click', function(e) {
+            if (window.R24Android && !window.R24Android.hasAsset('buscador.html')) {
+                e.preventDefault();
+                showMsg('⚠️ El buscador de noticias aún no está incluido en la app.', 'error');
+            }
+        });
+
+        // ================= FORMATO DE IMAGEN =================
+        // Story/Reel: 1080x1920 (9:16) — el de siempre
+        // Carrusel:   1080x1080 (1:1) — para el feed
+        function setFormat(w, h) {
+            W = w;
+            H = h;
+            canvas.width = W;
+            canvas.height = H;
+            if (generated) render();
+        }
+
+        document.querySelectorAll('input[name="formatMode"]').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                if (this.value === 'carrusel') {
+                    setFormat(1080, 1080);
+                } else if (this.value === 'feed') {
+                    setFormat(1080, 1350);
+                } else {
+                    setFormat(1080, 1920);
+                }
+            });
+        });
+
+        // ================= EVENTOS =================
+
+        // Si llegamos desde buscador.html con un titular elegido, lo precargamos.
+        // No cambia nada visual — solo llena los campos si vienen en la URL.
+        (function precargarDesdeBuscador() {
+            var params = new URLSearchParams(window.location.search);
+            var t = params.get('title');
+            var s = params.get('subtitle');
+            var cat = params.get('cat');
+            if (cat) {
+                var catRadio = document.querySelector('input[name="categoryMode"][value="' + cat + '"]');
+                if (catRadio) catRadio.checked = true;
+            }
+            if (t) {
+                document.getElementById('titleInput').value = t;
+                document.getElementById('titleCounter').textContent = t.length + '/120';
+            }
+            if (s) {
+                document.getElementById('subtitleInput').value = s;
+                document.getElementById('subtitleCounter').textContent = s.length + '/220';
+            }
+        })();
+
+        document.getElementById('titleInput').addEventListener('input', function(e) {
+            document.getElementById('titleCounter').textContent = e.target.value.length + '/120';
+        });
+
+        // El título son máximo 2 líneas: solo se permite UN Enter (un salto de línea manual).
+        document.getElementById('titleInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                if (this.value.indexOf('\n') !== -1) {
+                    e.preventDefault();
+                    showMsg('⚠️ El título ya tiene un salto de línea. Solo se permiten 2 líneas.', 'error');
+                }
+            }
+        });
+
+        // Al cambiar de categoría, actualizar preview al instante
+        document.querySelectorAll('input[name="categoryMode"]').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                if (generated) render();
+            });
+        });
+
+        // ===== TÍTULO: ajuste fino EN VIVO, una barra por línea =====
+        // Los sliders disparan con 'input' (mientras arrastras, no solo al soltar),
+        // así ves cada línea agrandarse o achicarse al instante para revisar el diagramado.
+        document.getElementById('titleSize1').addEventListener('input', function() {
+            document.getElementById('titleSize1Value').textContent = this.value + 'px';
+            if (generated) render();
+        });
+        document.getElementById('titleSize2').addEventListener('input', function() {
+            document.getElementById('titleSize2Value').textContent = this.value + 'px';
+            if (generated) render();
+        });
+
+        // Flechitas − / + para graduar cada línea de a poquito (1px por toque)
+        function stepTitleSize(inputId, valueId, delta) {
+            var input = document.getElementById(inputId);
+            var min = parseInt(input.min, 10), max = parseInt(input.max, 10);
+            var next = parseInt(input.value, 10) + delta;
+            if (next < min) next = min;
+            if (next > max) next = max;
+            input.value = next;
+            document.getElementById(valueId).textContent = next + 'px';
+            render();
+        }
+        document.getElementById('titleSize1Down').addEventListener('click', function() { stepTitleSize('titleSize1', 'titleSize1Value', -1); });
+        document.getElementById('titleSize1Up').addEventListener('click', function() { stepTitleSize('titleSize1', 'titleSize1Value', 1); });
+        document.getElementById('titleSize2Down').addEventListener('click', function() { stepTitleSize('titleSize2', 'titleSize2Value', -1); });
+        document.getElementById('titleSize2Up').addEventListener('click', function() { stepTitleSize('titleSize2', 'titleSize2Value', 1); });
+
+        // Botón "Guardar y ver de cerca": genera el preview (si hace falta) y lo amplía
+        // para revisar bien el diagramado del título sin tener que hacer zoom con los dedos.
+        document.getElementById('zoomBtn').addEventListener('click', function() {
+            var title = document.getElementById('titleInput').value.trim();
+            var subtitle = document.getElementById('subtitleInput').value.trim();
+            if (!title) { showMsg('⚠️ Ingresa un título', 'error'); return; }
+            if (!subtitle) { showMsg('⚠️ Ingresa un subtítulo', 'error'); return; }
+            render();
+            document.getElementById('downloadBtn').classList.add('visible');
+            document.getElementById('transparentBtn').classList.add('visible');
+
+            var wrap = document.getElementById('previewWrap');
+            var zoomed = wrap.classList.toggle('zoomed');
+            this.textContent = zoomed ? '🔎 Ver tamaño normal' : '🔍 Guardar y ver de cerca';
+            this.classList.toggle('active', zoomed);
+            if (zoomed) {
+                wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+
+        // Botones de tamaño del subtítulo (Full / Medio Full / Medio): fijos, como antes
+        document.querySelectorAll('input[name="subtitleSizeMode"]').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                document.getElementById('subtitleSize').value = this.value;
+                document.getElementById('subtitleSizeValue').textContent = this.value;
+                if (generated) render();
+            });
+        });
+
+        // Botones de posición del texto (Full / Medio Full / Medio): fijos, como antes
+        document.querySelectorAll('input[name="textPositionMode"]').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                document.getElementById('textPosition').value = this.value;
+                document.getElementById('posValue').textContent = this.value;
+                if (generated) render();
+            });
+        });
+
+        // Interlineado del título y subtítulo: quedan FIJOS (0.90), como antes.
+        // Difuminado: fijo Verde + Oscuro, ya no tiene selector (no hace falta listener).
+
+        // Etiqueta roja: sí/no y texto, actualización en vivo
+        document.querySelectorAll('input[name="tagMode"]').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                if (generated) render();
+            });
+        });
+        document.getElementById('tagInput').addEventListener('input', function() {
+            if (generated) render();
+        });
+
+        document.getElementById('subtitleInput').addEventListener('input', function(e) {
+            document.getElementById('subtitleCounter').textContent = e.target.value.length + '/220';
+        });
+
+        document.getElementById('imageInput').addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('fileName').textContent = '✓ ' + file.name;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                var img = new Image();
+                img.onload = function() {
+                    userImage = img;
+                    hideMsg();
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        document.getElementById('generateBtn').addEventListener('click', function() {
+            var title = document.getElementById('titleInput').value.trim();
+            var subtitle = document.getElementById('subtitleInput').value.trim();
+
+            if (!title) { showMsg('⚠️ Ingresa un título', 'error'); return; }
+            if (!subtitle) { showMsg('⚠️ Ingresa un subtítulo', 'error'); return; }
+
+            // La imagen es opcional: sin imagen igual puedes generar y bajar la capa transparente
+            var info = renderScene(ctx, true);
+            generated = true;
+            updateTitleSizeDisplay(info);
+            document.getElementById('downloadBtn').classList.add('visible');
+            document.getElementById('transparentBtn').classList.add('visible');
+            if (info && (info.title1 || info.title2)) {
+                var cual = info.title1 && info.title2 ? 'Las dos líneas del título son' : (info.title1 ? 'La línea 1 del título es' : 'La línea 2 del título es');
+                showMsg('⚠️ ' + cual + ' muy larga y se acortó con "…". Prueba con menos palabras o un tamaño más chico.', 'error');
+            } else {
+                showMsg('✅ Preview listo. Lo que ves es EXACTAMENTE lo que se descarga.', 'ok');
+            }
+        });
+
+        // Descargar PNG completo (con foto)
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            if (!generated) { showMsg('⚠️ Genera el preview primero', 'error'); return; }
+            if (!userImage) { showMsg('⚠️ No has cargado foto. Usa el botón PNG Transparente, o carga una imagen.', 'error'); return; }
+
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = '⏳ Generando...';
+
+            setTimeout(function() {
+                try {
+                    renderScene(ctx, true);
+                    downloadCanvas(canvas, 'R24_' + W + 'x' + H);
+                    showMsg('✅ PNG guardado (' + W + 'x' + H + ')', 'ok');
+                } catch (err) {
+                    console.error(err);
+                    showMsg('❌ Error al descargar. Intenta de nuevo.', 'error');
+                }
+                btn.disabled = false;
+                btn.textContent = '⬇️ Descargar PNG (con foto)';
+            }, 50);
+        });
+
+        // Descargar PNG TRANSPARENTE (sin foto — para montar sobre video)
+        document.getElementById('transparentBtn').addEventListener('click', function() {
+            if (!generated) { showMsg('⚠️ Genera el preview primero', 'error'); return; }
+
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = '⏳ Generando...';
+
+            setTimeout(function() {
+                try {
+                    // Canvas aparte para no tocar el preview
+                    var offCanvas = document.createElement('canvas');
+                    offCanvas.width = W;
+                    offCanvas.height = H;
+                    var offCtx = offCanvas.getContext('2d');
+                    renderScene(offCtx, false); // sin foto (para video)
+                    downloadCanvas(offCanvas, 'R24_overlay_' + W + 'x' + H);
+                    showMsg('✅ PNG transparente descargado. Móntalo sobre tu video en CapCut/InShot.', 'ok');
+                } catch (err) {
+                    console.error(err);
+                    showMsg('❌ Error al descargar. Intenta de nuevo.', 'error');
+                }
+                btn.disabled = false;
+                btn.textContent = '🎬 PNG Transparente (para video)';
+            }, 50);
+        });
+    </script>
+</body>
+</html>

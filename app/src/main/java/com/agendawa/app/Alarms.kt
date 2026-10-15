@@ -47,6 +47,50 @@ object WhatsApp {
 
     fun open(context: Context, phone: String, text: String): Boolean =
         runCatching { context.startActivity(intent(phone, text)); true }.getOrDefault(false)
+
+    fun isGroupLink(link: String) = link.contains("chat.whatsapp.com/", ignoreCase = true)
+
+    /**
+     * Abre WhatsApp con el mensaje listo y la lista de chats: se tocan uno o varios grupos y se envía.
+     * (WhatsApp deja marcar varios chats a la vez.)
+     */
+    fun shareText(context: Context, text: String): Boolean {
+        fun send(pkg: String?) = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+            if (pkg != null) setPackage(pkg)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+            if (runCatching { context.startActivity(send(pkg)); true }.getOrDefault(false)) return true
+        }
+        return runCatching {
+            context.startActivity(Intent.createChooser(send(null), "Enviar a un grupo").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Grupo con enlace de invitación: WhatsApp no deja escribir el texto por enlace en un grupo,
+     * así que se copia el mensaje y se abre el grupo; solo falta pegar y enviar.
+     */
+    fun openGroup(context: Context, group: WaGroup, text: String): Boolean {
+        if (!isGroupLink(group.link)) return shareText(context, text)
+        val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("Mensaje para ${group.name}", text))
+        val ok = runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(group.link.trim())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+        }.getOrDefault(false)
+        if (ok) Toast.makeText(context, "Mensaje copiado: mantén presionado el campo de texto y toca Pegar", Toast.LENGTH_LONG).show()
+        return ok || shareText(context, text)
+    }
+
+    /** Enviar el WhatsApp de un aviso: a un contacto, a un grupo con enlace, o eligiendo el/los grupos. */
+    fun send(context: Context, task: AgendaTask): Boolean {
+        val text = task.message.ifBlank { task.title }
+        if (!task.toGroup) return open(context, task.phone, text)
+        val single = task.groups.singleOrNull()
+        return if (single != null && isGroupLink(single.link)) openGroup(context, single, text) else shareText(context, text)
+    }
 }
 
 /** Llamadas: abre el marcador con el número listo (solo falta tocar llamar). */

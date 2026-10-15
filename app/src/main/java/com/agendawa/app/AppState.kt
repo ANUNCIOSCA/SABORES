@@ -67,9 +67,14 @@ class AppState(private val context: Context) {
 
     fun createTask(
         title: String, message: String, phone: String, dateTimeMillis: Long, isWhatsApp: Boolean, repeat: RepeatRule? = null,
+        /** No nulo = WhatsApp para grupo(s); lista vacía = se elige el grupo al enviar. */
+        groups: List<WaGroup>? = null,
     ): Pair<AgendaTask, ScheduleResult> {
         val at = repeat?.let { Repeat.next(it, System.currentTimeMillis()) } ?: dateTimeMillis
-        val t = AgendaTask(id = newId(), title = title, message = message, phone = phone, dateTimeMillis = at, isWhatsApp = isWhatsApp, repeat = repeat)
+        val t = AgendaTask(
+            id = newId(), title = title, message = message, phone = phone, dateTimeMillis = at, isWhatsApp = isWhatsApp, repeat = repeat,
+            toGroup = groups != null, groups = groups.orEmpty(),
+        )
         return t to saveTask(t)
     }
 

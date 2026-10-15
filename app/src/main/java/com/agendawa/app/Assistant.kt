@@ -35,6 +35,9 @@ data class VoiceIntent(
     val byAi: Boolean = false,
     /** Si se repite ("todos los lunes", "de lunes a viernes"…). Ya trae la hora del aviso. */
     val repeat: RepeatRule? = null,
+    /** WhatsApp para un grupo: su nombre como se dijo ("ventas", "familia"). Vacío = a una persona. */
+    val groupName: String = "",
+    val toGroup: Boolean = false,
 ) {
     /** Texto de detalles que se guarda en el recordatorio. */
     fun details(): String = buildList {
@@ -67,6 +70,10 @@ object LocalIntentParser {
     private val ideaWords = listOf("tengo una idea", "se me ocurrio", "se me ocurre", "anota esta idea")
     private val noteWords = listOf("anota", "apunta", "toma nota", "guarda una nota", "nota:")
     private val callWords = listOf("llamar", "llamarle", "llamale", "llama a", "llamada")
+    private val groupWords = listOf("al grupo", "en el grupo", "a los grupos", "por el grupo", "pal grupo", "para el grupo")
+    private val groupRegex = Regex(
+        "(?i)\\bgrupos?\\s+(?:de\\s+(?:la\\s+|los\\s+|las\\s+)?|del\\s+)?(.+?)(?=\\s+(?:que|para|diciendo|dile|a las?|hoy|mañana|pasado|el (?:lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)|todos|cada|de lunes|los (?:lunes|martes|miércoles|miercoles|jueves|viernes|sábados|sabados|domingos))\\b|[,.:]|$)",
+    )
     private val writeWords = listOf("whatsapp", "wasap", "guasap", "escribir", "escribirle", "escribele", "mensaje", "decirle", "avisarle", "mandarle")
     private val meetingWords = listOf("reunion", "cita con", "cita en", "junta", "encuentro con", "entrevista", "consulta con", "me reuno", "reunirme")
     private val travelWords = listOf("viajar", "viaje", "vuelo", "salgo para", "salgo a", "me voy a", "irme a", "bus para", "pasaje")
@@ -91,6 +98,7 @@ object LocalIntentParser {
         val kind = when {
             ideaStarts.any { norm.startsWith(it) } -> VoiceIntentKind.IDEA
             // Llamar/escribir pesan más que "idea" en medio de la frase ("escríbele a Carlos sobre la idea de...")
+            groupWords.any { norm.contains(it) } -> VoiceIntentKind.WHATSAPP
             callWords.any { norm.contains(it) } -> VoiceIntentKind.CALL
             writeWords.any { norm.contains(it) } -> VoiceIntentKind.WHATSAPP
             ideaWords.any { norm.contains(it) } -> VoiceIntentKind.IDEA
@@ -105,6 +113,22 @@ object LocalIntentParser {
         val afterPerson = personMatch?.let { text.substring(it.range.last + 1) } ?: text
         val stopNames = setOf("Mañana", "Hoy", "Pasado", "Que", "Para", "En", "A")
         val cleanPerson = person.split(" ").takeWhile { it !in stopNames }.joinToString(" ")
+
+        // WhatsApp para un grupo ("mándale al grupo de ventas que…")
+        if (kind == VoiceIntentKind.WHATSAPP && groupWords.any { norm.contains(it) }) {
+            val g = groupRegex.find(text)
+            val name = g?.groupValues?.get(1)?.trim()?.replaceFirstChar { it.uppercase() }.orEmpty()
+            val after = g?.let { text.substring(it.range.last + 1) } ?: text
+            val msg = messageRegex.find(after)?.groupValues?.get(1)?.trim()?.replaceFirstChar { it.uppercase() }.orEmpty()
+            return VoiceIntent(
+                kind,
+                title = if (name.isNotBlank()) "WhatsApp al grupo $name" else "WhatsApp al grupo",
+                groupName = name,
+                toGroup = true,
+                message = msg,
+                dateTimeMillis = base.dateTimeMillis,
+            )
+        }
 
         return when (kind) {
             VoiceIntentKind.IDEA, VoiceIntentKind.NOTE -> {
@@ -202,6 +226,9 @@ object AiAssistant {
               Si no dijo cuándo: dentro de 1 hora. Para idea o nota: vacío.
             - "aviso_minutos_antes": minutos antes de "fecha_hora" para avisar. 0 para llamada, whatsapp y recordatorio;
               30 para reunión; 120 para viaje (o lo que pida: "avísame una hora antes" = 60).
+            - "grupo": SOLO si el whatsapp es para un GRUPO ("mándale al grupo de ventas...", "escribe en el grupo de la
+              familia..."): el nombre del grupo sin "grupo de" ("Ventas", "Familia"). Entonces "persona" va vacío y el
+              "mensaje" va dirigido a todos ("Buenos días a todos, ..."). Vacío si es para una persona.
             - "repetir": SOLO si dijo que se repite. Copia sus palabras de días, horas y hasta cuándo, por ejemplo
               "lunes a las 8, martes a las 10 y miércoles a las 8", "de lunes a viernes a las 7", "todos los días a las 9
               hasta el 30 de noviembre", "todos los sábados a las 10". Usa los nombres de los días. Vacío si es una sola vez.
@@ -232,6 +259,8 @@ object AiAssistant {
                 personName = o.optString("persona").trim(),
                 message = o.optString("mensaje").trim(),
                 location = o.optString("lugar").trim(),
+                groupName = o.optString("grupo").trim(),
+                toGroup = kind == VoiceIntentKind.WHATSAPP && o.optString("grupo").isNotBlank(),
                 dateTimeMillis = (event - lead * 60_000).coerceAtLeast(minFuture),
                 eventMillis = if (isEvent || lead > 0) event else 0L,
                 byAi = true,

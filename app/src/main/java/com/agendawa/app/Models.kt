@@ -14,7 +14,14 @@ data class AgendaTask(
     val completed: Boolean = false,
     /** Si se repite (lunes, martes y miércoles…). Null = suena una sola vez. */
     val repeat: RepeatRule? = null,
+    /** WhatsApp para grupo(s) en vez de a un contacto. */
+    val toGroup: Boolean = false,
+    /** Grupos elegidos. Vacío con [toGroup] = se elige el grupo al enviar. */
+    val groups: List<WaGroup> = emptyList(),
 )
+
+/** Grupo de WhatsApp guardado. [link] = enlace de invitación (chat.whatsapp.com/…), opcional. */
+data class WaGroup(val name: String, val link: String = "")
 
 data class ReminderDraft(
     val title: String,
@@ -25,6 +32,8 @@ data class ReminderDraft(
     val phone: String = "",
     val contactName: String? = null,
     val repeat: RepeatRule? = null,
+    val toGroup: Boolean = false,
+    val groups: List<WaGroup> = emptyList(),
 )
 
 enum class ScheduleResult { EXACT, APPROXIMATE, SKIPPED }

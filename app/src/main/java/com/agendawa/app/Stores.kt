@@ -47,6 +47,10 @@ object TaskStore {
         put("isWhatsApp", t.isWhatsApp)
         put("completed", t.completed)
         t.repeat?.let { put("repeat", Repeat.toJson(it)) }
+        if (t.toGroup) {
+            put("toGroup", true)
+            put("groups", JSONArray().apply { t.groups.forEach { put(GroupStore.toJson(it)) } })
+        }
     }
 
     fun fromJson(o: JSONObject) = AgendaTask(
@@ -58,6 +62,8 @@ object TaskStore {
         isWhatsApp = o.optBoolean("isWhatsApp"),
         completed = o.optBoolean("completed"),
         repeat = Repeat.fromJson(o.optJSONObject("repeat")),
+        toGroup = o.optBoolean("toGroup"),
+        groups = o.optJSONArray("groups")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(GroupStore::fromJson) } }.orEmpty(),
     )
 
     fun load(context: Context): List<AgendaTask> =
@@ -71,6 +77,38 @@ object TaskStore {
     fun upsert(context: Context, task: AgendaTask) {
         val list = load(context).filterNot { it.id == task.id } + task
         save(context, list)
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/** Grupos de WhatsApp favoritos (nombre + enlace de invitación opcional). */
+object GroupStore {
+    private const val PREFS = "agenda_wa_groups"
+    private const val KEY = "groups"
+
+    fun toJson(g: WaGroup) = JSONObject().put("name", g.name).put("link", g.link)
+    fun fromJson(o: JSONObject) = WaGroup(o.optString("name").trim(), o.optString("link").trim()).takeIf { it.name.isNotBlank() }
+
+    fun load(context: Context): List<WaGroup> = readList(context, PREFS, KEY) { fromJson(it) }.filterNotNull()
+
+    fun save(context: Context, groups: List<WaGroup>) = writeList(context, PREFS, KEY, groups.map(::toJson))
+
+    /** Agrega o actualiza (por nombre, sin importar mayúsculas). */
+    fun upsert(context: Context, group: WaGroup) {
+        val list = load(context).filterNot { it.name.equals(group.name, ignoreCase = true) } + group
+        save(context, list.sortedBy { it.name.lowercase() })
+    }
+
+    fun remove(context: Context, group: WaGroup) = save(context, load(context).filterNot { it.name.equals(group.name, ignoreCase = true) })
+
+    /** "el grupo de ventas" → el favorito que más se parezca. */
+    fun match(context: Context, spoken: String): WaGroup? {
+        val q = SmartNoteOrganizer.normalize(spoken).replace(Regex("^(el |la |los |las )?(grupo )?(de |del )?"), "").trim()
+        if (q.isBlank()) return null
+        val all = load(context)
+        return all.firstOrNull { SmartNoteOrganizer.normalize(it.name) == q }
+            ?: all.firstOrNull { SmartNoteOrganizer.normalize(it.name).contains(q) || q.contains(SmartNoteOrganizer.normalize(it.name)) }
     }
 }
 

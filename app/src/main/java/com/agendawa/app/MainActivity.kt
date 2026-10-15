@@ -397,11 +397,35 @@ fun AgendaWaApp(
         }
     }
 
+    // WhatsApp para un grupo: se busca en los grupos guardados; si no está, se elige el grupo al enviar
+    val saveGroupMessage: (VoiceIntent) -> Unit = { vi ->
+        val fav = GroupStore.match(context, vi.groupName)
+        var msg = vi.message
+        // "escribe en el grupo de la familia buenos días": lo que sigue al nombre del grupo es el mensaje
+        if (fav != null && msg.isBlank() && vi.groupName.length > fav.name.length + 2 &&
+            SmartNoteOrganizer.normalize(vi.groupName).startsWith(SmartNoteOrganizer.normalize(fav.name))
+        ) msg = vi.groupName.drop(fav.name.length).trim(' ', ',', ':').replaceFirstChar { it.uppercase() }
+        val groupName = fav?.name ?: vi.groupName
+        val groups = listOfNotNull(fav ?: vi.groupName.takeIf { it.isNotBlank() }?.let { WaGroup(it) })
+        val title = if (groupName.isNotBlank()) "WhatsApp al grupo $groupName" else "WhatsApp al grupo"
+        if (msg.isBlank()) {
+            openEditorFromVoice(ReminderDraft(title, "", vi.dateTimeMillis, true, repeat = vi.repeat, toGroup = true, groups = groups))
+        } else {
+            val (_, result) = state.createTask(title, msg, "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true, vi.repeat, groups)
+            finishVoice(
+                "Mensaje para el grupo ${groupName.ifBlank { "que elijas" }} listo, ${whenOf(vi)}" +
+                    (if (fav == null && groupName.isNotBlank()) ". Guárdalo en tus grupos para abrirlo directo" else "") +
+                    if (result == ScheduleResult.APPROXIMATE) " (activa las alarmas exactas)" else "",
+            )
+        }
+    }
+
     val handleVoiceIntent: (VoiceIntent) -> Unit = { vi ->
         when (vi.kind) {
             // Las ideas se guardan siempre; en la tarjeta quedan "Desarrollar" (Laboratorio) y "Editar"
             VoiceIntentKind.IDEA, VoiceIntentKind.NOTE -> saveIdea(vi)
             VoiceIntentKind.CALL, VoiceIntentKind.WHATSAPP -> when {
+                vi.kind == VoiceIntentKind.WHATSAPP && vi.toGroup -> saveGroupMessage(vi)
                 vi.personName.isBlank() -> scheduleForContact(vi, null)
                 ContactSearch.hasPermission(context) -> resolveContact(vi)
                 else -> {
@@ -457,7 +481,9 @@ fun AgendaWaApp(
     }
 
     val openWhatsApp: (AgendaTask) -> Unit = { task ->
-        if (!WhatsApp.open(context, task.phone, task.message.ifBlank { task.title })) showMessage("No se pudo abrir WhatsApp.")
+        // Varios grupos: se muestra la lista para abrirlos uno por uno o enviar a todos
+        if (task.toGroup && task.groups.size > 1) sendTask = task
+        else if (!WhatsApp.send(context, task)) showMessage("No se pudo abrir WhatsApp.")
     }
 
     val taskActions = TaskActions(
@@ -711,7 +737,7 @@ fun AgendaWaApp(
                 onDismiss = { sendTask = null },
                 onSend = {
                     sendTask = null
-                    if (WhatsApp.open(context, task.phone, task.message.ifBlank { task.title })) {
+                    if (WhatsApp.send(context, task)) {
                         state.setCompleted(task, true)
                         AlarmSoundService.stop(context)
                         NotificationHelper.cancelAllForTask(context, task.id)
@@ -719,6 +745,15 @@ fun AgendaWaApp(
                 },
                 onDraft = { sendTask = null; draftTask = task },
                 onEdit = { sendTask = null; taskEditor = TaskEditorRequest(task = task) },
+                onOpenGroup = { g ->
+                    AlarmSoundService.stop(context)
+                    NotificationHelper.cancelAllForTask(context, task.id)
+                    WhatsApp.openGroup(context, g, task.message.ifBlank { task.title })
+                },
+                onFinish = {
+                    sendTask = null
+                    state.setCompleted(task, true)
+                },
             )
         }
 

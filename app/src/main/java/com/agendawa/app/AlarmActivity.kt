@@ -65,7 +65,7 @@ class AlarmActivity : ComponentActivity() {
         if (task != null) {
             AlarmActions.stopAndComplete(this, task.id, quiet = true)
             NotificationHelper.cancelAllForTask(this, task.id)
-            WhatsApp.open(this, task.phone, task.message.ifBlank { task.title })
+            WhatsApp.send(this, task)
         }
         finish()
     }

@@ -686,7 +686,7 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
     }
     var perDayTime by remember { mutableStateOf(initialRule?.dayMinutes?.isNotEmpty() == true) }
     // Las horas por día guardadas son las del aviso: se muestran como las del evento
-    var dayMinutes by remember { mutableStateOf(initialRule?.dayMinutes?.mapValues { it.value + initialLead } ?: emptyMap()) }
+    var dayMinutes by remember { mutableStateOf<Map<Int, Int>>(initialRule?.dayMinutes?.mapValues { it.value + initialLead } ?: emptyMap()) }
     var repeatUntil by remember { mutableLongStateOf(initialRule?.until ?: 0L) }
     val repeatDays = when (repeatMode) { 1 -> Repeat.ALL; 2 -> Repeat.WEEKDAYS; 3 -> customDays; else -> 0 }
     val aiEnabled = remember { AiSettings.isEnabled(context) }

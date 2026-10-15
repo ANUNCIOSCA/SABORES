@@ -493,8 +493,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        /** Arranca la exportación del video con la plantilla encima. El avance llega a window.onVideoProgress. */
-        @JavascriptInterface
         /** Igual que [exportVideo] pero con el encuadre elegido (x/y de -1 a 1, zoom, foto completa). */
         @JavascriptInterface
         fun exportVideoFramed(overlayDataUrl: String, width: Int, height: Int, fileName: String, x: Double, y: Double, zoom: Double, fit: Boolean): String {
@@ -502,6 +500,7 @@ class MainActivity : ComponentActivity() {
             return exportVideo(overlayDataUrl, width, height, fileName)
         }
 
+        /** Arranca la exportación del video con la plantilla encima. El avance llega a window.onVideoProgress. */
         @JavascriptInterface
         fun exportVideo(overlayDataUrl: String, width: Int, height: Int, fileName: String): String {
             if (videoUri == null) return "Primero elige un video"

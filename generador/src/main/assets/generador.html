@@ -1857,7 +1857,11 @@
                     document.getElementById('generateBtn').click();
                     if (!generated) return;
                 }
+                if (bar.disabled) return;
+                bar.disabled = true; bar.textContent = '⏳ Preparando…';
                 document.getElementById('videoBtn').click();
+                // Si no arrancó (falta algo), el botón vuelve a quedar disponible
+                setTimeout(function() { if (!document.getElementById('videoBtn').disabled) { bar.disabled = false; bar.textContent = '🎥 Video'; } }, 1500);
             });
             // El PNG sigue disponible cuando hay video
             var more = document.querySelector('.export-more');
@@ -1876,8 +1880,9 @@
                 bar.textContent = '⏳ ' + p + '%';
             };
             var oldDone = window.onVideoDone, oldErr = window.onVideoError;
-            window.onVideoDone = function(f) { bar.textContent = '🎥 Video'; bar.disabled = false; oldDone(f); };
-            window.onVideoError = function(e) { bar.textContent = '🎥 Video'; bar.disabled = false; oldErr(e); };
+            var showBox = function() { var m = document.getElementById('msgBox'); if (m) m.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+            window.onVideoDone = function(f) { bar.textContent = '🎥 Video'; bar.disabled = false; oldDone(f); showBox(); };
+            window.onVideoError = function(e) { bar.textContent = '🎥 Video'; bar.disabled = false; oldErr(e); showBox(); };
         })();
     </script>
 </body>

@@ -36,6 +36,7 @@ import androidx.media3.effect.Presentation
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
@@ -200,17 +201,29 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startVideoExport(overlay: Bitmap, width: Int, height: Int, fileName: String) {
-        val uri = videoUri ?: return callJs("onVideoError", "Primero elige un video")
-        val out = File(cacheDir, "export.mp4").apply { delete() }
         val f = frame
         frame = VideoFrame()
-        val overlayEffect = OverlayEffect(ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(overlay)))
+        runVideoExport(overlay, width, height, fileName, f, attempt = 0)
+    }
+
+    /**
+     * Exporta el video con la plantilla encima.
+     * Intento 1: tamaño completo. Si el teléfono falla (codificador, HDR, memoria), intento 2 en 720p.
+     */
+    private fun runVideoExport(overlay: Bitmap, width: Int, height: Int, fileName: String, f: VideoFrame, attempt: Int) {
+        val uri = videoUri ?: return callJs("onVideoError", "Primero elige un video")
+        val out = File(cacheDir, "export.mp4").apply { delete() }
+        // En el segundo intento todo va a 720 de ancho (más liviano para el teléfono)
+        val w = if (attempt == 0) width else 720
+        val h = if (attempt == 0) height else ((height * 720f / width).toInt() / 2) * 2
+        val ov = if (w == overlay.width && h == overlay.height) overlay else Bitmap.createScaledBitmap(overlay, w, h, true)
+        val overlayEffect = OverlayEffect(ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(ov)))
 
         val videoEffects: List<androidx.media3.common.Effect> = if (f.fit) {
             // Video completo (con bordes negros), con el zoom y la posición elegidos
             val m = android.graphics.Matrix().apply { setScale(f.zoom, f.zoom); postTranslate(f.x, -f.y) }
             listOf(
-                Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT),
+                Presentation.createForWidthAndHeight(w, h, Presentation.LAYOUT_SCALE_TO_FIT),
                 MatrixTransformation { m },
                 overlayEffect,
             )
@@ -218,21 +231,25 @@ class MainActivity : ComponentActivity() {
             // Llena la pantalla: se recorta, pero mostrando la parte del video que se eligió.
             // Coordenadas de -1 a 1: primero se mueve el centro elegido al medio y luego se agranda.
             val size = videoSize(uri)
-            val target = width.toFloat() / height
+            val target = w.toFloat() / h
             val src = size?.let { it.first.toFloat() / it.second } ?: target
             val visX = if (src > target) target / src else 1f
             val visY = if (src > target) 1f else src / target
             val cx = f.x * (1f - visX / f.zoom)
             val cy = -f.y * (1f - visY / f.zoom)
+            val needsMatrix = f.zoom != 1f || cx != 0f || cy != 0f
             val m = android.graphics.Matrix().apply { setTranslate(-cx, -cy); postScale(f.zoom, f.zoom) }
-            listOf(
-                MatrixTransformation { m },
-                Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP),
+            listOfNotNull(
+                if (needsMatrix) MatrixTransformation { m } else null,
+                Presentation.createForWidthAndHeight(w, h, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP),
                 overlayEffect,
             )
         }
-        val effects = Effects(listOf(), videoEffects)
-        val item = EditedMediaItem.Builder(MediaItem.fromUri(uri)).setEffects(effects).build()
+        val item = EditedMediaItem.Builder(MediaItem.fromUri(uri)).setEffects(Effects(listOf(), videoEffects)).build()
+        // Los videos HDR de los teléfonos nuevos se pasan a color normal (si no, muchos equipos fallan al editarlos)
+        val composition = Composition.Builder(EditedMediaItemSequence(item))
+            .setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
+            .build()
 
         val t = Transformer.Builder(this)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
@@ -245,26 +262,39 @@ class MainActivity : ComponentActivity() {
                         Toast.makeText(this@MainActivity, "Video guardado en Galería › Reportalo24", Toast.LENGTH_LONG).show()
                         callJs("onVideoDone", fileName)
                     } catch (e: Exception) {
-                        callJs("onVideoError", e.message ?: "No se pudo guardar el video")
+                        callJs("onVideoError", "No se pudo guardar el video: " + (e.message ?: e.javaClass.simpleName))
                     }
                 }
 
                 override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
                     finishExport()
                     out.delete()
-                    callJs("onVideoError", exportException.message ?: "Error al procesar el video")
+                    val why = exportException.errorCodeName + (exportException.message?.let { " · $it" } ?: "")
+                    if (attempt == 0) {
+                        Toast.makeText(this@MainActivity, "Reintentando en 720p…", Toast.LENGTH_SHORT).show()
+                        callJs("onVideoProgress", 0)
+                        mainHandler.postDelayed({ runVideoExport(overlay, width, height, fileName, f, attempt = 1) }, 400)
+                    } else {
+                        callJs("onVideoError", "El teléfono no pudo procesar este video ($why). Prueba con un video más corto o grabado en calidad normal (no HDR / 4K).")
+                    }
                 }
             })
             .build()
 
         transformer = t
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        t.start(item, out.absolutePath)
+        try {
+            t.start(composition, out.absolutePath)
+        } catch (e: Exception) {
+            finishExport()
+            return callJs("onVideoError", "No se pudo iniciar: " + (e.message ?: e.javaClass.simpleName))
+        }
 
         val holder = ProgressHolder()
         mainHandler.post(object : Runnable {
             override fun run() {
                 val current = transformer ?: return
+                if (current !== t) return
                 if (current.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
                     callJs("onVideoProgress", holder.progress)
                 }

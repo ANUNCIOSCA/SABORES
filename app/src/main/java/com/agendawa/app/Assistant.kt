@@ -33,6 +33,8 @@ data class VoiceIntent(
     /** Hora real del evento (reunión o viaje). 0 si no aplica. */
     val eventMillis: Long = 0L,
     val byAi: Boolean = false,
+    /** Si se repite ("todos los lunes", "de lunes a viernes"…). Ya trae la hora del aviso. */
+    val repeat: RepeatRule? = null,
 ) {
     /** Texto de detalles que se guarda en el recordatorio. */
     fun details(): String = buildList {
@@ -40,6 +42,18 @@ data class VoiceIntent(
         if (location.isNotBlank()) add("Lugar: $location")
         if (message.isNotBlank()) add(message)
     }.joinToString("\n")
+}
+
+/** Añade la repetición dicha en [phrase] (si la hay). Ideas y notas no se repiten. */
+fun VoiceIntent.withRepeat(phrase: String): VoiceIntent {
+    if (kind == VoiceIntentKind.IDEA || kind == VoiceIntentKind.NOTE || phrase.isBlank()) return this
+    val rule = RepeatParser.parse(phrase) ?: return this
+    val lead = if (eventMillis > 0) ((eventMillis - dateTimeMillis) / 60_000).toInt().coerceIn(0, 12 * 60) else 0
+    val resolved = RepeatParser.resolve(rule, if (eventMillis > 0) eventMillis else dateTimeMillis, lead)
+    val first = Repeat.next(resolved, System.currentTimeMillis()) ?: return this
+    // Sin IA, el título trae "todos los lunes…": se limpia
+    val cleanTitle = if (byAi) title else RepeatParser.stripFromTitle(title).ifBlank { title }
+    return copy(title = cleanTitle, repeat = resolved, dateTimeMillis = first, eventMillis = if (eventMillis > 0) first + lead * 60_000L else 0L)
 }
 
 /** Avisos previos por defecto para reuniones y viajes. */
@@ -69,7 +83,9 @@ object LocalIntentParser {
     private val placeRegex = Regex("(?i)\\b(?:en|en el|en la)\\s+((?:el|la|los|las)\\s+)?([\\p{L}0-9][\\p{L}0-9 .,'-]{2,60}?)(?=\\s+(?:a las?|hoy|mañana|pasado|el (?:lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)|con|para)\\b|[.,]|$)")
     private val destinationRegex = Regex("(?i)\\b(?:a|para|hacia)\\s+(\\p{Lu}[\\p{L}]+(?:\\s+\\p{Lu}[\\p{L}]+)*)")
 
-    fun parse(text: String): VoiceIntent {
+    fun parse(text: String): VoiceIntent = parseOnce(text).withRepeat(text)
+
+    private fun parseOnce(text: String): VoiceIntent {
         val norm = SmartNoteOrganizer.normalize(text)
         val base = VoiceParser.parse(text)
         val kind = when {
@@ -186,6 +202,9 @@ object AiAssistant {
               Si no dijo cuándo: dentro de 1 hora. Para idea o nota: vacío.
             - "aviso_minutos_antes": minutos antes de "fecha_hora" para avisar. 0 para llamada, whatsapp y recordatorio;
               30 para reunión; 120 para viaje (o lo que pida: "avísame una hora antes" = 60).
+            - "repetir": SOLO si dijo que se repite. Copia sus palabras de días, horas y hasta cuándo, por ejemplo
+              "lunes a las 8, martes a las 10 y miércoles a las 8", "de lunes a viernes a las 7", "todos los días a las 9
+              hasta el 30 de noviembre", "todos los sábados a las 10". Usa los nombres de los días. Vacío si es una sola vez.
         """.trimIndent()
 
         val root = JSONObject(AiClient.extractJson(AiClient.generate(context, prompt, json = true)))
@@ -216,7 +235,15 @@ object AiAssistant {
                 dateTimeMillis = (event - lead * 60_000).coerceAtLeast(minFuture),
                 eventMillis = if (isEvent || lead > 0) event else 0L,
                 byAi = true,
-            )
+            ).let { vi ->
+                // La repetición la dice la IA en "repetir"; si solo hay una acción, también vale la frase original
+                val said = o.optString("repetir").trim()
+                when {
+                    said.isNotBlank() -> vi.withRepeat(said).let { if (it.repeat == null) vi.withRepeat("todos los $said") else it }
+                    arr.length() == 1 -> vi.withRepeat(text)
+                    else -> vi
+                }
+            }
         }.ifEmpty { listOf(LocalIntentParser.parse(text)) }
     }
 

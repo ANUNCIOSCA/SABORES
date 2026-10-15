@@ -12,6 +12,8 @@ data class AgendaTask(
     val dateTimeMillis: Long,
     val isWhatsApp: Boolean = false,
     val completed: Boolean = false,
+    /** Si se repite (lunes, martes y miércoles…). Null = suena una sola vez. */
+    val repeat: RepeatRule? = null,
 )
 
 data class ReminderDraft(
@@ -22,6 +24,7 @@ data class ReminderDraft(
     /** Teléfono ya elegido (por ejemplo, al dictar "llamar a Carlos"). */
     val phone: String = "",
     val contactName: String? = null,
+    val repeat: RepeatRule? = null,
 )
 
 enum class ScheduleResult { EXACT, APPROXIMATE, SKIPPED }

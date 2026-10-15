@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -315,6 +316,13 @@ fun TaskCard(task: AgendaTask, actions: TaskActions, showDate: Boolean = false) 
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+                task.repeat?.let { rule ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Repeat, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(Repeat.label(rule), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 2)
+                    }
                 }
                 if (task.message.isNotBlank() && task.message != task.title) {
                     Text(task.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -611,6 +619,25 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
     var dateTime by remember { mutableLongStateOf(existing?.dateTimeMillis ?: draft?.dateTimeMillis ?: defaultTime) }
     var contactName by remember { mutableStateOf(draft?.contactName) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Repetir: 0 = una sola vez, 1 = todos los días, 2 = lunes a viernes, 3 = días que elija
+    val initialRule = existing?.repeat ?: draft?.repeat
+    var repeatMode by remember {
+        mutableStateOf(
+            when (initialRule?.days) {
+                null -> 0
+                Repeat.ALL -> 1
+                Repeat.WEEKDAYS -> 2
+                else -> 3
+            },
+        )
+    }
+    var customDays by remember {
+        mutableStateOf(initialRule?.days ?: (1 shl (Calendar.getInstance().apply { timeInMillis = dateTime }.get(Calendar.DAY_OF_WEEK) + 5) % 7))
+    }
+    var perDayTime by remember { mutableStateOf(initialRule?.dayMinutes?.isNotEmpty() == true) }
+    var dayMinutes by remember { mutableStateOf(initialRule?.dayMinutes ?: emptyMap()) }
+    var repeatUntil by remember { mutableLongStateOf(initialRule?.until ?: 0L) }
+    val repeatDays = when (repeatMode) { 1 -> Repeat.ALL; 2 -> Repeat.WEEKDAYS; 3 -> customDays; else -> 0 }
     val aiEnabled = remember { AiSettings.isEnabled(context) }
     var polishing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -714,7 +741,7 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                         else { Icon(Icons.Rounded.AutoAwesome, null); Spacer(Modifier.width(6.dp)); Text("Redactar mensaje con IA") }
                     }
                 }
-                Text("Fecha y hora", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(if (repeatMode != 0) "Desde qué día y a qué hora" else "Fecha y hora", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { pickDate(context, dateTime) { dateTime = it } }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Rounded.CalendarMonth, null, modifier = Modifier.size(18.dp))
@@ -736,26 +763,51 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                         }.timeInMillis
                     }
                 }
+                RepeatSection(
+                    mode = repeatMode,
+                    onMode = { repeatMode = it; error = null },
+                    days = repeatDays,
+                    onToggleDay = { d -> customDays = customDays xor (1 shl d); error = null },
+                    baseMinutes = Repeat.minutesOf(dateTime),
+                    perDayTime = perDayTime,
+                    onPerDayTime = { perDayTime = it },
+                    dayMinutes = dayMinutes,
+                    onDayTime = { d, m -> dayMinutes = dayMinutes + (d to m) },
+                    until = repeatUntil,
+                    onUntil = { repeatUntil = it },
+                )
                 if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
             Button(onClick = {
+                val base = Repeat.minutesOf(dateTime)
+                val rule = if (repeatMode == 0 || repeatDays == 0) null else RepeatRule(
+                    days = repeatDays,
+                    minutes = base,
+                    dayMinutes = if (perDayTime) (0..6).filter { (repeatDays and (1 shl it)) != 0 }.associateWith { dayMinutes[it] ?: base } else emptyMap(),
+                    until = repeatUntil,
+                )
+                // Si se repite, la primera vez es la próxima fecha válida desde el día elegido
+                val firstAt = rule?.let { Repeat.next(it, maxOf(System.currentTimeMillis(), startOfDay(dateTime) - 1)) }
                 val finalTitle = title.trim().ifBlank {
                     if (isWhatsApp && message.isNotBlank()) "Enviar WhatsApp" else ""
                 }
                 when {
                     finalTitle.isBlank() -> error = "Escribe el recordatorio antes de guardarlo."
-                    existing == null && dateTime <= System.currentTimeMillis() -> error = "Selecciona una fecha y hora futuras."
+                    repeatMode == 3 && repeatDays == 0 -> error = "Marca al menos un día para repetir."
+                    rule != null && firstAt == null -> error = "La fecha final ya pasó. Cámbiala o quítala."
+                    rule == null && existing == null && dateTime <= System.currentTimeMillis() -> error = "Selecciona una fecha y hora futuras."
                     else -> onSave(
                         AgendaTask(
                             id = existing?.id ?: 0L,
                             title = finalTitle,
                             message = message.trim(),
                             phone = phone.trim(),
-                            dateTimeMillis = dateTime,
+                            dateTimeMillis = firstAt ?: dateTime,
                             isWhatsApp = isWhatsApp,
-                            completed = if (existing != null && dateTime > System.currentTimeMillis()) false else (existing?.completed ?: false),
+                            completed = if (firstAt != null || (existing != null && dateTime > System.currentTimeMillis())) false else (existing?.completed ?: false),
+                            repeat = rule,
                         ),
                     )
                 }
@@ -763,6 +815,108 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
+}
+
+/** Repetir: una vez, todos los días, lunes a viernes o días elegidos; misma hora o una por día; fecha final. */
+@Composable
+private fun RepeatSection(
+    mode: Int,
+    onMode: (Int) -> Unit,
+    days: Int,
+    onToggleDay: (Int) -> Unit,
+    baseMinutes: Int,
+    perDayTime: Boolean,
+    onPerDayTime: (Boolean) -> Unit,
+    dayMinutes: Map<Int, Int>,
+    onDayTime: (Int, Int) -> Unit,
+    until: Long,
+    onUntil: (Long) -> Unit,
+) {
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Repeat, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(6.dp))
+            Text("Repetir", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = mode == 0, onClick = { onMode(0) }, label = { Text("Una vez") }, modifier = Modifier.weight(1f))
+            FilterChip(selected = mode == 1, onClick = { onMode(1) }, label = { Text("Todos los días", maxLines = 1) }, modifier = Modifier.weight(1.4f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = mode == 2, onClick = { onMode(2) }, label = { Text("Lun a Vie") }, modifier = Modifier.weight(1f))
+            FilterChip(selected = mode == 3, onClick = { onMode(3) }, label = { Text("Elegir días", maxLines = 1) }, modifier = Modifier.weight(1.4f))
+        }
+        if (mode == 3) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                (0..6).forEach { d ->
+                    val on = (days and (1 shl d)) != 0
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(CircleShape)
+                            .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { onToggleDay(d) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            Repeat.letters[d],
+                            fontWeight = FontWeight.Bold,
+                            color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        if (mode != 0 && days != 0) {
+            val selected = (0..6).filter { (days and (1 shl it)) != 0 }
+            if (selected.size > 1) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Hora distinta para cada día")
+                        Text(
+                            if (perDayTime) "Toca la hora de cada día para cambiarla" else "Todos a las ${Repeat.timeText(baseMinutes)}",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = perDayTime, onCheckedChange = onPerDayTime)
+                }
+            }
+            if (perDayTime && selected.size > 1) {
+                selected.forEach { d ->
+                    val m = dayMinutes[d] ?: baseMinutes
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(Repeat.longNames[d].replaceFirstChar { it.uppercase() }, modifier = Modifier.weight(1f))
+                        OutlinedButton(onClick = {
+                            pickTime(context, startOfDay(System.currentTimeMillis()) + m * 60_000L) { onDayTime(d, Repeat.minutesOf(it)) }
+                        }) {
+                            Icon(Icons.Rounded.AccessTime, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(Repeat.timeText(m))
+                        }
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(
+                    onClick = { pickDate(context, if (until > 0) until else System.currentTimeMillis() + 30 * 86_400_000L) { onUntil(startOfDay(it)) } },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Rounded.EventAvailable, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (until > 0) "Hasta el ${formatDate(until, "d MMM yyyy")}" else "Sin fecha final", maxLines = 1)
+                }
+                if (until > 0) TextButton(onClick = { onUntil(0L) }) { Text("Quitar") }
+            }
+            Text(
+                "Se repite: " + Repeat.label(
+                    RepeatRule(days, baseMinutes, if (perDayTime) selected.associateWith { dayMinutes[it] ?: baseMinutes } else emptyMap(), until),
+                ),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
 }
 
 @Composable

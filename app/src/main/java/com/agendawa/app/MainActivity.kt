@@ -296,10 +296,16 @@ fun AgendaWaApp(
         finishVoice(if (vi.kind == VoiceIntentKind.IDEA) "Idea guardada en notas" else "Nota guardada")
     }
 
+    /** "mañana a las 3:00 p. m." o, si se repite, "los lunes y miércoles a las 8:00 a. m." */
+    fun whenOf(vi: VoiceIntent): String = vi.repeat?.let { Repeat.spoken(it) } ?: spokenWhen(vi.dateTimeMillis)
+
     /** Recordatorios, reuniones y viajes: se guardan de una vez. */
     val saveReminder: (VoiceIntent) -> Unit = { vi ->
-        val (_, result) = state.createTask(vi.title, vi.details(), "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), false)
-        val whenText = spokenWhen(if (vi.eventMillis > 0) vi.eventMillis else vi.dateTimeMillis)
+        val (_, result) = state.createTask(vi.title, vi.details(), "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), false, vi.repeat)
+        // En reuniones y viajes se dice la hora del evento, no la del aviso previo
+        val lead = if (vi.eventMillis > 0) ((vi.eventMillis - vi.dateTimeMillis) / 60_000).toInt() else 0
+        val whenText = vi.repeat?.let { r -> Repeat.spoken(r.copy(minutes = r.minutes + lead, dayMinutes = r.dayMinutes.mapValues { it.value + lead })) }
+            ?: spokenWhen(if (vi.eventMillis > 0) vi.eventMillis else vi.dateTimeMillis)
         val what = when (vi.kind) {
             VoiceIntentKind.MEETING -> "${vi.title}, $whenText. Te aviso antes"
             VoiceIntentKind.TRAVEL -> "${vi.title}, $whenText. Te aviso con tiempo"
@@ -319,7 +325,7 @@ fun AgendaWaApp(
             askingMessage?.let { (vi, c) ->
                 askingMessage = null
                 openEditorFromVoice(
-                    ReminderDraft("Enviar WhatsApp a ${c.displayName}", "", vi.dateTimeMillis, true, c.phoneNumber, c.displayName),
+                    ReminderDraft("Enviar WhatsApp a ${c.displayName}", "", vi.dateTimeMillis, true, c.phoneNumber, c.displayName, vi.repeat),
                 )
             }
         },
@@ -334,8 +340,8 @@ fun AgendaWaApp(
                 }.also { thinking = null }
             } else said.replaceFirstChar { it.uppercase() }
             val title = "Enviar WhatsApp a ${contact.displayName}"
-            state.createTask(title, msg, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true)
-            finishVoice("WhatsApp para ${contact.displayName} listo, ${spokenWhen(vi.dateTimeMillis)}")
+            state.createTask(title, msg, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true, vi.repeat)
+            finishVoice("WhatsApp para ${contact.displayName} listo, ${whenOf(vi)}")
         }
     }
 
@@ -347,7 +353,7 @@ fun AgendaWaApp(
             else -> "Llamar a ${contact.displayName}"
         }
         when {
-            contact == null -> openEditorFromVoice(ReminderDraft(title, vi.message, vi.dateTimeMillis, isWa))
+            contact == null -> openEditorFromVoice(ReminderDraft(title, vi.message, vi.dateTimeMillis, isWa, repeat = vi.repeat))
             // WhatsApp sin mensaje: se pregunta por voz qué escribirle
             isWa && vi.message.isBlank() -> {
                 askingMessage = vi to contact
@@ -355,8 +361,8 @@ fun AgendaWaApp(
                 askMessageByVoice()
             }
             else -> {
-                val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), isWa)
-                val whenText = spokenWhen(vi.dateTimeMillis)
+                val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), isWa, vi.repeat)
+                val whenText = whenOf(vi)
                 finishVoice(
                     (if (isWa) "WhatsApp para ${contact.displayName} listo, $whenText" else "Llamar a ${contact.displayName}, $whenText") +
                         if (result == ScheduleResult.APPROXIMATE) " (activa las alarmas exactas)" else "",
@@ -457,7 +463,10 @@ fun AgendaWaApp(
     val taskActions = TaskActions(
         onEdit = { if (it.isWhatsApp && !it.completed) sendTask = it else taskEditor = TaskEditorRequest(task = it) },
         onDelete = { confirmDeleteTask = it },
-        onToggle = { task, done -> state.setCompleted(task, done) },
+        onToggle = { task, done ->
+            val updated = state.setCompleted(task, done)
+            if (done && task.repeat != null && !updated.completed) showMessage("Listo. Se repite: próximo ${spokenWhen(updated.dateTimeMillis)}")
+        },
         onWhatsApp = openWhatsApp,
         onDraft = { draftTask = it },
     )

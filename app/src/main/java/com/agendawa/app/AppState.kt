@@ -24,7 +24,14 @@ class AppState(private val context: Context) {
     init { reloadAll() }
 
     fun reloadAll() {
-        tasks.clear(); tasks.addAll(TaskStore.load(context))
+        // Avisos que se repiten y quedaron atrás saltan a su próxima fecha
+        val loaded = TaskStore.load(context)
+        val caught = loaded.map { Repeat.catchUp(it) }
+        if (caught != loaded) {
+            TaskStore.save(context, caught)
+            caught.filter { it !in loaded }.forEach { ReminderScheduler.schedule(context, it) }
+        }
+        tasks.clear(); tasks.addAll(caught.sortedBy { it.dateTimeMillis })
         notes.clear(); notes.addAll(SmartNoteStore.load(context))
         clients.clear(); clients.addAll(ClientStore.load(context))
         finance.clear(); finance.addAll(FinanceStore.load(context))
@@ -58,8 +65,11 @@ class AppState(private val context: Context) {
         return ReminderScheduler.schedule(context, toSave)
     }
 
-    fun createTask(title: String, message: String, phone: String, dateTimeMillis: Long, isWhatsApp: Boolean): Pair<AgendaTask, ScheduleResult> {
-        val t = AgendaTask(id = newId(), title = title, message = message, phone = phone, dateTimeMillis = dateTimeMillis, isWhatsApp = isWhatsApp)
+    fun createTask(
+        title: String, message: String, phone: String, dateTimeMillis: Long, isWhatsApp: Boolean, repeat: RepeatRule? = null,
+    ): Pair<AgendaTask, ScheduleResult> {
+        val at = repeat?.let { Repeat.next(it, System.currentTimeMillis()) } ?: dateTimeMillis
+        val t = AgendaTask(id = newId(), title = title, message = message, phone = phone, dateTimeMillis = at, isWhatsApp = isWhatsApp, repeat = repeat)
         return t to saveTask(t)
     }
 
@@ -75,12 +85,14 @@ class AppState(private val context: Context) {
         }
     }
 
-    fun setCompleted(task: AgendaTask, completed: Boolean) {
-        val updated = task.copy(completed = completed)
+    /** Marcar como hecho. Si se repite, pasa a la próxima fecha y devuelve el aviso actualizado. */
+    fun setCompleted(task: AgendaTask, completed: Boolean): AgendaTask {
+        val updated = if (completed) Repeat.advance(task) else task.copy(completed = false)
         val idx = tasks.indexOfFirst { it.id == task.id }
         if (idx >= 0) tasks[idx] = updated
         persistTasks()
-        if (completed) ReminderScheduler.cancel(context, task.id) else ReminderScheduler.schedule(context, updated)
+        if (updated.completed) ReminderScheduler.cancel(context, task.id) else ReminderScheduler.schedule(context, updated)
+        return updated
     }
 
     // ------------------------------------------------------------------ notas

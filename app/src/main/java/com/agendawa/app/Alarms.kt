@@ -68,6 +68,8 @@ object PhoneCall {
 object ReminderScheduler {
     const val EXTRA_TASK_ID = "task_id"
     const val EXTRA_PRE_ALERT = "pre_alert"
+    const val EXTRA_ROLLOVER = "rollover"
+    private const val ROLLOVER_REQUEST_OFFSET = 613000
     const val PRE_ALERT_MINUTES = 5L
     private const val PRE_ALERT_REQUEST_OFFSET = 947000
 
@@ -119,6 +121,22 @@ object ReminderScheduler {
         runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi); ScheduleResult.APPROXIMATE }
             .getOrDefault(ScheduleResult.SKIPPED)
 
+    /**
+     * Aviso que se repite: si suena y nadie lo atiende, a la hora se programa solo la próxima fecha
+     * (así el lunes siguiente vuelve a sonar aunque no se haya abierto la app).
+     */
+    fun scheduleRollover(context: Context, task: AgendaTask) {
+        if (task.repeat == null) return
+        val intent = Intent(context, ReminderReceiver::class.java)
+            .putExtra(EXTRA_TASK_ID, task.id).putExtra(EXTRA_ROLLOVER, true)
+        val pi = PendingIntent.getBroadcast(
+            context, task.id.hashCode() + ROLLOVER_REQUEST_OFFSET, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val am = context.getSystemService(AlarmManager::class.java)
+        runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + Repeat.MISSED_AFTER_MS + 60_000, pi) }
+    }
+
     fun cancel(context: Context, taskId: Long) {
         val am = context.getSystemService(AlarmManager::class.java)
         am.cancel(pendingIntent(context, taskId, false))
@@ -127,7 +145,10 @@ object ReminderScheduler {
     }
 
     fun rescheduleAll(context: Context) {
-        TaskStore.load(context)
+        val loaded = TaskStore.load(context)
+        val caught = loaded.map { Repeat.catchUp(it) }
+        if (caught != loaded) TaskStore.save(context, caught)
+        caught
             .filter { !it.completed && it.dateTimeMillis > System.currentTimeMillis() }
             .forEach { schedule(context, it) }
     }
@@ -139,9 +160,19 @@ class ReminderReceiver : BroadcastReceiver() {
         if (id == -1L) return
         val task = TaskStore.find(context, id) ?: return
         if (task.completed) return
+        if (intent.getBooleanExtra(ReminderScheduler.EXTRA_ROLLOVER, false)) {
+            val caught = Repeat.catchUp(task)
+            if (caught != task) {
+                TaskStore.upsert(context, caught)
+                NotificationHelper.cancelAllForTask(context, task.id)
+                ReminderScheduler.schedule(context, caught)
+            }
+            return
+        }
         if (intent.getBooleanExtra(ReminderScheduler.EXTRA_PRE_ALERT, false)) {
             NotificationHelper.showPreAlert(context, task)
         } else {
+            ReminderScheduler.scheduleRollover(context, task)
             val started = runCatching { AlarmSoundService.start(context, task.id) }.isSuccess
             if (!started) NotificationHelper.showReminder(context, task)
         }
@@ -507,9 +538,14 @@ object AlarmActions {
 
     fun stopAndComplete(context: Context, taskId: Long, quiet: Boolean = false) {
         val tasks = TaskStore.load(context)
-        TaskStore.save(context, tasks.map { if (it.id == taskId) it.copy(completed = true) else it })
+        // Si se repite, no se termina: pasa a la próxima fecha
+        val updated = tasks.firstOrNull { it.id == taskId }?.let { Repeat.advance(it) }
+        TaskStore.save(context, tasks.map { if (it.id == taskId && updated != null) updated else it })
         stopCurrentAlarm(context, taskId)
-        if (!quiet) toast(context, "Alarma apagada")
+        if (updated != null && !updated.completed) {
+            ReminderScheduler.schedule(context, updated)
+            if (!quiet) toast(context, "Listo. Próximo: ${spokenWhen(updated.dateTimeMillis)}")
+        } else if (!quiet) toast(context, "Alarma apagada")
     }
 
     fun snooze(context: Context, taskId: Long, minutes: Long = 5) {

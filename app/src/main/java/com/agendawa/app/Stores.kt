@@ -46,6 +46,7 @@ object TaskStore {
         put("dateTimeMillis", t.dateTimeMillis)
         put("isWhatsApp", t.isWhatsApp)
         put("completed", t.completed)
+        t.repeat?.let { put("repeat", Repeat.toJson(it)) }
     }
 
     fun fromJson(o: JSONObject) = AgendaTask(
@@ -56,6 +57,7 @@ object TaskStore {
         dateTimeMillis = o.getLong("dateTimeMillis"),
         isWhatsApp = o.optBoolean("isWhatsApp"),
         completed = o.optBoolean("completed"),
+        repeat = Repeat.fromJson(o.optJSONObject("repeat")),
     )
 
     fun load(context: Context): List<AgendaTask> =

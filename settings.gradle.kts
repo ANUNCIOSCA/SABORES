@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 rootProject.name = "AgendaWA"
 include(":app")
 include(":generador")
+include(":veterinaria")

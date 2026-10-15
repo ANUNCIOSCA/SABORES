@@ -29,7 +29,7 @@ jobs:
           set -o pipefail
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
-          gradle :app:assembleRelease :generador:assembleRelease --continue --console=plain 2>&1 | tee build.log
+          gradle :app:assembleRelease :generador:assembleRelease :veterinaria:assembleRelease --continue --console=plain 2>&1 | tee build.log
 
       - name: Publish result to branch
         if: always()
@@ -47,6 +47,12 @@ jobs:
             echo "Generador OK" >> out/status.txt
           else
             echo "Generador FAIL" >> out/status.txt
+          fi
+          if [ -f veterinaria/build/outputs/apk/release/veterinaria-release.apk ]; then
+            cp veterinaria/build/outputs/apk/release/veterinaria-release.apk out/AgendaVeterinaria-v1.0.0.apk
+            echo "Veterinaria OK" >> out/status.txt
+          else
+            echo "Veterinaria FAIL" >> out/status.txt
           fi
           cd out
           git init -q -b ci-output

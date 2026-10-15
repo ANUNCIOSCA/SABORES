@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- almohadilla principal -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M54,52c-9,0 -17,9 -17,17c0,6 5,9 10,8c3,-0.5 5,-2 7,-2s4,1.5 7,2c5,1 10,-2 10,-8c0,-8 -8,-17 -17,-17z"/>
+    <!-- dedos -->
+    <path android:fillColor="#FFFFFF" android:pathData="M38,47m-5.5,0a5.5,7 0,1 0,11 0a5.5,7 0,1 0,-11 0"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M47,38m-5.5,0a5.5,7 0,1 0,11 0a5.5,7 0,1 0,-11 0"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M61,38m-5.5,0a5.5,7 0,1 0,11 0a5.5,7 0,1 0,-11 0"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M70,47m-5.5,0a5.5,7 0,1 0,11 0a5.5,7 0,1 0,-11 0"/>
+    <!-- cruz -->
+    <path android:fillColor="#0E8A6E" android:pathData="M51.5,59h5v5h5v5h-5v5h-5v-5h-5v-5h5z"/>
+</vector>

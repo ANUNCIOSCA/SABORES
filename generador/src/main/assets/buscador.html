@@ -91,6 +91,21 @@
         .chip.ver-abandono::before { background: #333; }
         .chip.ver-critico::before { background: #d61f2c; }
         .chip.ver-perspectiva::before { background: #8e44ad; }
+        .chip.missing { border-style: dashed; color: #888; }
+        .frow { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .fopts { display: flex; flex-wrap: wrap; gap: 4px; }
+        .fo { font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 999px; border: 1px solid #d6eaea; background: #fff; color: #0f5a5a; cursor: pointer; }
+        .fo::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; background: #1a8b8b; }
+        .fo.a-amarillista::before { background: #f1c40f; } .fo.a-abandono::before { background: #333; }
+        .fo.a-critico::before { background: #d61f2c; } .fo.a-perspectiva::before { background: #8e44ad; }
+        .fo.redo { background: #1a8b8b; color: #fff; border-color: #1a8b8b; } .fo.redo::before { display: none; }
+        .fo.off { opacity: .45; }
+        .falts { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
+        .falt { text-align: left; font-size: 13px; padding: 7px 9px; border-radius: 8px; border: 1px dashed #1a8b8b; background: #f4fbfb; color: #111; cursor: pointer; }
+        .draftbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: none; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -4px 14px rgba(0,0,0,.25); }
+        .draftbar.show { display: flex; }
+        .draftbar .btn { flex: 1 1 0; min-width: 0; padding: 10px 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        body.has-bar { padding-bottom: 72px; }
         .ai-box .ed { width: 100%; padding: 10px; border: 2px solid #d6eaea; border-radius: 8px; font-size: 15px; font-family: inherit; margin-bottom: 4px; }
         .ai-box .ed:focus { outline: none; border-color: #1a8b8b; }
         .ai-box .ed[data-f="l1"], .ai-box .ed[data-f="l2"], .ai-box .ed[data-f="tag"] { text-transform: uppercase; font-weight: 800; }
@@ -838,6 +853,51 @@ function copyText(t) {
 }
 
 var VERSION_LABELS = { amarillista: 'Amarillista', abandono: 'Abandono', critico: 'Crítico', perspectiva: 'Mi perspectiva' };
+var ANGLES = ['critico', 'amarillista', 'abandono', 'perspectiva'];
+var ANGLES_SET = { critico: 1, amarillista: 1, abandono: 1, perspectiva: 1 };
+var SHORT_ANGLE = { critico: 'Crít.', amarillista: 'Amar.', abandono: 'Aband.', perspectiva: 'Persp.' };
+var FIELD_NAMES = { tag: 'franja', title: 'título', sub: 'subtítulo' };
+var ANGLE_DESC = {
+    amarillista: 'miedo / riesgo (terror, riesgo de muerte, trampa mortal)',
+    abandono: 'olvido / desamparo (tierra de nadie, nadie viene)',
+    critico: 'responsabilidad: nombra al responsable institucional o contrasta promesa vs. realidad con fecha; ironía por yuxtaposición, nunca insulto',
+    perspectiva: 'la que tú publicarías como editor de R24'
+};
+
+// ---------- barra fija abajo con las acciones de la placa que estás editando ----------
+var draftBarBox = null, draftBarCurrent = null;
+function setDraftBar(box, actions) {
+    var bar = document.getElementById('draftBar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'draftBar'; bar.className = 'draftbar';
+        bar.innerHTML = '<button class="btn btn-red" data-b="use">Plantilla ▶</button>' +
+            '<button class="btn btn-light" data-b="again">Otra versión</button>' +
+            '<button class="btn btn-light" data-b="copy">Copiar</button>' +
+            '<button class="btn btn-light" data-b="save">Guardar</button>';
+        document.body.appendChild(bar);
+        Array.prototype.forEach.call(bar.querySelectorAll('[data-b]'), function (b) {
+            b.onclick = function () {
+                if (!draftBarCurrent || !document.body.contains(draftBarBox)) { hideDraftBar(); return; }
+                var k = b.dataset.b;
+                draftBarCurrent[k]();
+                if (k === 'copy' || k === 'save') { var o = b.textContent; b.textContent = k === 'copy' ? 'Copiado' : 'Guardado'; setTimeout(function () { b.textContent = o; }, 1400); }
+            };
+        });
+        // Si la placa se cierra o desaparece, la barra se esconde
+        setInterval(function () {
+            if (draftBarBox && (!document.body.contains(draftBarBox) || draftBarBox.offsetParent === null)) hideDraftBar();
+        }, 800);
+    }
+    draftBarBox = box; draftBarCurrent = actions || draftBarCurrent;
+    bar.classList.add('show'); document.body.classList.add('has-bar');
+}
+function hideDraftBar() {
+    var bar = document.getElementById('draftBar');
+    if (bar) bar.classList.remove('show');
+    document.body.classList.remove('has-bar');
+    draftBarBox = null;
+}
 
 async function aiWrite(card, g, deep) {
     var d = card.querySelector('.detail');
@@ -922,10 +982,14 @@ function renderDraft(box, card, g, deep, r, readInfo, articles) {
             (r.dato_que_duele ? '<h4 style="margin-top:6px">El dato que duele</h4><div>' + esc(r.dato_que_duele) + '</div>' : '') +
             '<h4>Elige el ángulo</h4><div class="chips" data-versions></div>' +
             '<div class="hint" data-why style="margin-top:6px"></div>' +
-            '<label class="hint">Franja roja <span data-count></span></label><input class="ed" data-f="tag" maxlength="30">' +
-            '<label class="hint">Título · línea 1</label><input class="ed" data-f="l1" maxlength="40">' +
-            '<label class="hint">Título · línea 2</label><input class="ed" data-f="l2" maxlength="40">' +
-            '<label class="hint">Subtítulo</label><textarea class="ed" data-f="sub" rows="3" maxlength="220"></textarea>' +
+            '<div class="hint" style="margin-top:6px">¿Te gusta una parte y otra no? Cambia cada una por separado: toma la de otro ángulo o pide otra con ↻.</div>' +
+            '<div class="frow"><label class="hint">Franja roja <span data-count></span></label><span class="fopts" data-fo="tag"></span></div>' +
+            '<input class="ed" data-f="tag" maxlength="30"><div class="falts" data-alts="tag"></div>' +
+            '<div class="frow"><label class="hint">Título (2 líneas)</label><span class="fopts" data-fo="title"></span></div>' +
+            '<input class="ed" data-f="l1" maxlength="40">' +
+            '<input class="ed" data-f="l2" maxlength="40"><div class="falts" data-alts="title"></div>' +
+            '<div class="frow"><label class="hint">Subtítulo</label><span class="fopts" data-fo="sub"></span></div>' +
+            '<textarea class="ed" data-f="sub" rows="3" maxlength="220"></textarea><div class="falts" data-alts="sub"></div>' +
             '<div class="hint" style="margin-top:6px">Vista previa:</div>' +
             '<div class="meta"><span class="badge hot" data-p="tag"></span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
             '<div class="preview-title" data-p="title" style="margin-top:6px"></div>' +
@@ -959,34 +1023,139 @@ function renderDraft(box, card, g, deep, r, readInfo, articles) {
             box.querySelector('[data-p="title"]').innerHTML = esc(val('l1').toUpperCase()) + '<br>' + esc(val('l2').toUpperCase());
             box.querySelector('[data-p="sub"]').innerHTML = renderSub(val('sub'));
         };
-        var pick = function (i) {
-            var v = versions[i];
-            field('tag').value = (v.franja || '').toUpperCase();
-            field('l1').value = (v.linea1 || '').toUpperCase();
-            field('l2').value = (v.linea2 || '').toUpperCase();
-            field('sub').value = plain(v.subtitulo);
+        // Los 4 ángulos siempre a la vista; si la IA no trajo alguno, se pide al tocarlo
+        var byAngle = {};
+        versions.forEach(function (v) { if (ANGLES.indexOf(v.tipo) >= 0 && !byAngle[v.tipo]) byAngle[v.tipo] = v; });
+        var extras = versions.filter(function (v) { return ANGLES.indexOf(v.tipo) < 0; });
+        var curAngle = null;
+        var setField = function (key, v) {
+            if (key === 'tag') field('tag').value = (v.franja || '').toUpperCase();
+            if (key === 'title') { field('l1').value = (v.linea1 || '').toUpperCase(); field('l2').value = (v.linea2 || '').toUpperCase(); }
+            if (key === 'sub') field('sub').value = plain(v.subtitulo);
+        };
+        var markChips = function () {
+            Array.prototype.forEach.call(box.querySelectorAll('[data-versions] .chip'), function (c) {
+                c.classList.toggle('on', c.dataset.a === curAngle);
+                c.classList.toggle('missing', !!ANGLES_SET[c.dataset.a] && !byAngle[c.dataset.a]);
+            });
+            Array.prototype.forEach.call(box.querySelectorAll('.fo[data-a]'), function (b) { b.classList.toggle('off', !byAngle[b.dataset.a]); });
+        };
+        var applyVersion = function (key, v) {
+            setField('tag', v); setField('title', v); setField('sub', v);
+            curAngle = key;
             box.querySelector('[data-why]').textContent = v.por_que ? 'Por qué: ' + v.por_que : '';
-            Array.prototype.forEach.call(box.querySelectorAll('[data-versions] .chip'), function (c, j) { c.classList.toggle('on', j === i); });
-            refresh();
+            Array.prototype.forEach.call(box.querySelectorAll('.falts'), function (x) { x.innerHTML = ''; });
+            markChips(); refresh();
+        };
+        var pickAngle = async function (a, chip) {
+            if (byAngle[a]) { applyVersion(a, byAngle[a]); return; }
+            if (!aiProviders().length) { alertMsg(box, 'Para pedir el ángulo ' + VERSION_LABELS[a] + ' hace falta una clave de Gemini o Groq (⚙).'); return; }
+            var old = chip ? chip.textContent : '';
+            if (chip) chip.textContent = 'Redactando...';
+            try {
+                var v = await aiCall(buildAnglePrompt(g, articles, val, a));
+                v.tipo = a; byAngle[a] = v; applyVersion(a, v);
+            } catch (e) { alertMsg(box, e.message); }
+            if (chip) chip.textContent = old;
         };
         var chips = box.querySelector('[data-versions]');
-        versions.forEach(function (v, i) {
+        ANGLES.forEach(function (a) {
             var c = document.createElement('span');
-            c.className = 'chip ver-' + (v.tipo || '');
-            c.textContent = VERSION_LABELS[v.tipo] || v.tipo || ('Versión ' + (i + 1));
-            c.onclick = function () { pick(i); };
+            c.className = 'chip ver-' + a; c.dataset.a = a;
+            c.textContent = VERSION_LABELS[a];
+            c.onclick = function () { pickAngle(a, c); };
             chips.appendChild(c);
         });
+        extras.forEach(function (v, i) {
+            var key = 'x' + i;
+            byAngle[key] = v;
+            var c = document.createElement('span');
+            c.className = 'chip ver-' + (v.tipo || ''); c.dataset.a = key;
+            c.textContent = v.tipo === 'sin IA' ? 'Sin IA' : (VERSION_LABELS[v.tipo] || v.tipo || 'Versión');
+            c.onclick = function () { applyVersion(key, v); };
+            chips.appendChild(c);
+        });
+        // Por cada parte: tomarla de otro ángulo o pedir otras opciones solo de esa parte
+        var redoField = async function (key, btn) {
+            var alts = box.querySelector('[data-alts="' + key + '"]');
+            if (!aiProviders().length) {
+                if (key === 'title') {
+                    // Sin IA: reparte el título en otro corte de líneas
+                    var words = (val('l1') + ' ' + val('l2')).trim().split(/\s+/);
+                    var cut = (parseInt(btn.dataset.cut || '0', 10) % Math.max(1, words.length - 1)) + 1;
+                    btn.dataset.cut = cut;
+                    field('l1').value = words.slice(0, cut).join(' '); field('l2').value = words.slice(cut).join(' ');
+                    refresh(); return;
+                }
+                alertMsg(box, 'Para pedir otra ' + FIELD_NAMES[key] + ' hace falta una clave de Gemini o Groq (⚙). Puedes editarla a mano.'); return;
+            }
+            btn.disabled = true; var old = btn.textContent; btn.textContent = '...';
+            alts.innerHTML = '<span class="hint">Buscando otras opciones de ' + FIELD_NAMES[key] + '...</span>';
+            try {
+                var res = await aiCall(buildFieldPrompt(g, articles, val, key, curAngle));
+                var opts = (res.opciones || []).filter(Boolean).slice(0, 4);
+                alts.innerHTML = opts.length ? '<span class="hint">Toca una para usarla:</span>' : '<span class="hint">No llegaron opciones. Intenta otra vez.</span>';
+                opts.forEach(function (o) {
+                    if (typeof o === 'string') o = key === 'tag' ? { franja: o } : key === 'sub' ? { subtitulo: o } : { linea1: o, linea2: '' };
+                    var b = document.createElement('button');
+                    b.className = 'falt';
+                    b.textContent = key === 'tag' ? (o.franja || '').toUpperCase() : key === 'title' ? ((o.linea1 || '') + ' / ' + (o.linea2 || '')).toUpperCase() : plain(o.subtitulo);
+                    b.onclick = function () { setField(key, o); alts.innerHTML = ''; refresh(); };
+                    alts.appendChild(b);
+                });
+            } catch (e) { alts.innerHTML = ''; alertMsg(box, e.message); }
+            btn.disabled = false; btn.textContent = old;
+        };
+        ['tag', 'title', 'sub'].forEach(function (key) {
+            var holder = box.querySelector('[data-fo="' + key + '"]');
+            ANGLES.forEach(function (a) {
+                var b = document.createElement('button');
+                b.className = 'fo a-' + a; b.dataset.a = a;
+                b.textContent = SHORT_ANGLE[a];
+                b.title = 'Tomar ' + FIELD_NAMES[key] + ' del ángulo ' + VERSION_LABELS[a];
+                b.onclick = async function () {
+                    if (!byAngle[a]) {
+                        // Si ese ángulo no existe aún se pide completo y se toma solo esta parte
+                        if (!aiProviders().length) { alertMsg(box, 'Ese ángulo necesita una clave de Gemini o Groq (⚙).'); return; }
+                        var keep = { tag: val('tag'), l1: val('l1'), l2: val('l2'), sub: val('sub') }, prev = curAngle;
+                        await pickAngle(a, null);
+                        if (!byAngle[a]) return;
+                        field('tag').value = keep.tag; field('l1').value = keep.l1; field('l2').value = keep.l2; field('sub').value = keep.sub;
+                        curAngle = prev; markChips();
+                        box.querySelector('[data-why]').textContent = prev && byAngle[prev] && byAngle[prev].por_que ? 'Por qué: ' + byAngle[prev].por_que : '';
+                    }
+                    setField(key, byAngle[a]); refresh();
+                };
+                holder.appendChild(b);
+            });
+            var r2 = document.createElement('button');
+            r2.className = 'fo redo'; r2.textContent = '↻ Otra';
+            r2.title = 'Pedir otras opciones solo de ' + FIELD_NAMES[key];
+            r2.onclick = function () { redoField(key, r2); };
+            holder.appendChild(r2);
+        });
         Array.prototype.forEach.call(box.querySelectorAll('.ed'), function (el) { el.oninput = refresh; });
-        // Arranca con "mi perspectiva" si viene; si no, con la primera
-        var start = versions.findIndex(function (v) { return v.tipo === 'perspectiva'; });
-        pick(start >= 0 ? start : 0);
+        // Arranca con "mi perspectiva" si viene; si no, con la primera que haya
+        var first = byAngle.perspectiva ? 'perspectiva' : (ANGLES.find(function (a) { return byAngle[a]; }) || (extras.length ? 'x0' : null));
+        if (first) applyVersion(first, byAngle[first]);
+        markChips();
 
         box.querySelector('[data-act="useai"]').onclick = function () {
             var t = [val('l1'), val('l2')].filter(Boolean).join('\n') || g.title;
             useInTemplate(t, val('sub'), cat, val('tag'));
         };
         box.querySelector('[data-act="again"]').onclick = function () { box.remove(); aiWrite(card, g, deep); };
+        var placaText = function () { return [val('tag'), [val('l1'), val('l2')].filter(Boolean).join(' '), plain(val('sub'))].filter(Boolean).join('\n'); };
+        // La barra de abajo siempre actúa sobre la placa que estás tocando
+        var barActions = {
+            use: function () { box.querySelector('[data-act="useai"]').click(); },
+            again: function () { box.querySelector('[data-act="again"]').click(); },
+            copy: function () { copyText(placaText()); },
+            save: function () { saveItem('Placa', [val('l1'), val('l2')].filter(Boolean).join(' ') || g.title, placaText()); }
+        };
+        setDraftBar(box, barActions);
+        box.addEventListener('focusin', function () { setDraftBar(box, barActions); });
+        box.addEventListener('click', function () { if (draftBarBox !== box) setDraftBar(box, barActions); });
         // ----- Copy de Instagram: editable, guardar, rehacer, copiar, compartir -----
         var copyBox = field('copy');
         copyBox.value = r.copy ? (plain(r.copy) + (hashtags.length ? '\n\n' + hashtags.join(' ') : '')) : localCopy(val, g);
@@ -1203,6 +1372,37 @@ function localCopy(val, g) {
     return (val('tag') ? val('tag') + ' | ' : '') + t + '\n\n' + plain(val('sub')) +
         '\n\nFuente: ' + g.items[0].source + '.\n\n¿Qué opinas? Te leemos en los comentarios.\n\n' +
         '#Reportalo24 #Venezuela #Noticias #' + norm(topic).replace(/\s+/g, '') + ' #UltimaHora';
+}
+
+// Pide UN ángulo completo que faltó
+function buildAnglePrompt(g, articles, val, angle) {
+    return [
+        R24_GUIDE, '',
+        sourcesBlock(g, articles), '',
+        'Escribe la placa con el ángulo "' + angle + '": ' + ANGLE_DESC[angle] + '. Nunca neutral, hechos intactos y atribuidos.',
+        'Franja de 18-20 caracteres en mayúsculas, título de 4-8 palabras repartido en dos líneas parecidas, subtítulo de máx. 200 caracteres con el dato que duele atribuido.',
+        'Responde SOLO un JSON: {"franja": "...", "linea1": "...", "linea2": "...", "subtitulo": "...", "por_que": "1 línea"}'
+    ].join('\n');
+}
+
+// Otras opciones SOLO de una parte (franja, título o subtítulo), sin tocar el resto
+function buildFieldPrompt(g, articles, val, key, angle) {
+    var spec = {
+        tag: ['la FRANJA roja', '18-20 caracteres, mayúsculas, sin punto final', '{"opciones": [{"franja": "..."}, {"franja": "..."}, {"franja": "..."}]}'],
+        title: ['el TÍTULO', '4-8 palabras en total, repartidas en dos líneas de largo parecido, mayúsculas', '{"opciones": [{"linea1": "...", "linea2": "..."}, {"linea1": "...", "linea2": "..."}, {"linea1": "...", "linea2": "..."}]}'],
+        sub: ['el SUBTÍTULO', 'máx. 200 caracteres, el dato que duele atribuido a su fuente, sin asteriscos', '{"opciones": [{"subtitulo": "..."}, {"subtitulo": "..."}, {"subtitulo": "..."}]}']
+    }[key];
+    var current = key === 'tag' ? val('tag') : key === 'title' ? val('l1') + ' / ' + val('l2') : val('sub');
+    return [
+        R24_GUIDE, '',
+        sourcesBlock(g, articles), '',
+        placaBlock(val), '',
+        'Reescribe SOLO ' + spec[0] + ' de esa placa. Lo demás se queda igual, así que debe combinar con ello.',
+        (angle && ANGLE_DESC[angle] ? 'Mantén el ángulo "' + angle + '": ' + ANGLE_DESC[angle] + '.' : ''),
+        'Reglas: ' + spec[1] + '. Hechos intactos, nada inventado.',
+        'Dame 3 opciones distintas entre sí y distintas de la actual: «' + current + '».',
+        'Responde SOLO un JSON: ' + spec[2]
+    ].join('\n');
 }
 
 function buildCopyPrompt(g, articles, val, previous) {

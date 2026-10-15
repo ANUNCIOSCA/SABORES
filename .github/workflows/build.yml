@@ -43,7 +43,7 @@ jobs:
             echo "AgendaWA FAIL" > out/status.txt
           fi
           if [ -f generador/build/outputs/apk/release/generador-release.apk ]; then
-            cp generador/build/outputs/apk/release/generador-release.apk out/Reportalo24-Generador-v1.8.0.apk
+            cp generador/build/outputs/apk/release/generador-release.apk out/Reportalo24-Generador-v1.9.0.apk
             echo "Generador OK" >> out/status.txt
           else
             echo "Generador FAIL" >> out/status.txt

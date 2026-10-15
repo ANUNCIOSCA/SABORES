@@ -357,9 +357,19 @@
         #previewCanvas {
             width: auto;
             max-width: 100%;
-            height: min(36vh, 360px);
+            height: min(25vh, 250px);
             max-height: none;
         }
+        /* Sin foto todavía: la vista previa ocupa poco */
+        .preview-wrap.empty:not(.zoomed) #previewCanvas { height: min(13vh, 110px); }
+        /* Ocultar / ver la vista previa para trabajar el texto con toda la pantalla */
+        .preview-wrap { flex-direction: column; align-items: center; }
+        .pv-toggle {
+            margin-top: 6px; border: none; background: rgba(255,255,255,.12); color: #e6f4f4;
+            font-family: inherit; font-weight: 600; font-size: 12px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+        }
+        .preview-wrap.collapsed { padding-top: 6px; padding-bottom: 6px; }
+        .preview-wrap.collapsed #previewCanvas { display: none; }
         .preview-wrap.zoomed #previewCanvas {
             max-width: 100%;
             height: min(78vh, 760px);
@@ -368,7 +378,7 @@
         .preview-wrap.zoomed { position: relative; }
         .preview-wrap.zoomed #previewCanvas { cursor: zoom-out; }
         /* Mientras se escribe: vista previa pequeña para que el teclado y el campo quepan */
-        .preview-wrap.editing #previewCanvas { height: min(20vh, 170px); }
+        .preview-wrap.editing #previewCanvas { height: min(16vh, 150px); }
         .red-tools { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
         .red-tools button {
             flex: 1 1 140px; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer;
@@ -446,7 +456,9 @@
         /* ===== Barra fija abajo ===== */
         .gen-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -4px 14px rgba(0,0,0,.25); }
         .gen-bar .btn { width: auto; flex: 1 1 0; margin: 0; padding: 14px 8px; font-size: 15px; }
-        .gen-bar .btn-buscar-noticias { flex: 0 0 56px; }
+        .gen-bar .btn-buscar-noticias, .gen-bar .btn-image { flex: 0 0 52px; }
+        .gen-bar .btn-image { background: #eef7f7; color: #0f5a5a; border: 2px solid #1a8b8b; }
+        .gen-bar .btn { font-size: 14px; padding: 13px 4px; text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .gen-bar .btn-download:not(.visible) { display: none; }
         body { padding-bottom: 84px; }
     </style>
@@ -461,6 +473,7 @@
         <!-- PREVIEW: es el canvas REAL de 1080x1920 (9:16), escalado visualmente -->
         <div class="preview-wrap" id="previewWrap">
             <canvas id="previewCanvas" width="1080" height="1920"></canvas>
+            <button type="button" class="pv-toggle" id="previewToggle">▲ Ocultar vista previa</button>
         </div>
 
         <div class="form-section">
@@ -664,6 +677,7 @@
 
             <!-- Barra fija abajo: lo que más se usa siempre a mano -->
             <div class="gen-bar">
+            <button type="button" class="btn btn-image" id="barImageBtn" aria-label="Elegir imagen">📷</button>
             <button class="btn btn-generate" id="generateBtn">✨ Generar</button>
             <button class="btn btn-download" id="downloadBtn">⬇️ Descargar</button>
             <a href="buscador.html" class="btn btn-buscar-noticias">🔎</a>
@@ -1641,6 +1655,32 @@
             try { var v = localStorage.getItem('r24_fold_' + d.dataset.fold); if (v !== null) d.open = v === '1'; } catch (e) {}
             d.addEventListener('toggle', function() { try { localStorage.setItem('r24_fold_' + d.dataset.fold, d.open ? '1' : '0'); } catch (e) {} });
         });
+
+        // Vista previa: ocultar / ver (se recuerda), y pequeña mientras no haya foto
+        (function() {
+            var wrap = document.getElementById('previewWrap');
+            var tgl = document.getElementById('previewToggle');
+            var apply = function(collapsed) {
+                wrap.classList.toggle('collapsed', collapsed);
+                tgl.textContent = collapsed ? '▼ Ver vista previa' : '▲ Ocultar vista previa';
+                try { localStorage.setItem('r24_preview_hidden', collapsed ? '1' : '0'); } catch (e) {}
+            };
+            var saved = '0';
+            try { saved = localStorage.getItem('r24_preview_hidden') || '0'; } catch (e) {}
+            apply(saved === '1');
+            tgl.addEventListener('click', function(e) { e.stopPropagation(); apply(!wrap.classList.contains('collapsed')); });
+            var refresh = function() { wrap.classList.toggle('empty', !userImage && !generated); };
+            refresh();
+            setInterval(refresh, 600);
+            // Al generar se muestra aunque estuviera oculta
+            document.getElementById('generateBtn').addEventListener('click', function() { setTimeout(function() { if (generated) apply(false); }, 50); });
+            // Botón 📷 de la barra: abre el selector de imagen (y abre su sección)
+            document.getElementById('barImageBtn').addEventListener('click', function() {
+                var fold = document.querySelector('details.fold[data-fold="imagen"]');
+                if (fold) fold.open = true;
+                document.getElementById('imageInput').click();
+            });
+        })();
     </script>
 </body>
 </html>

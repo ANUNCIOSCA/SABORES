@@ -74,11 +74,19 @@ class MainActivity : ComponentActivity() {
 
         webView = WebView(this)
         webView.setBackgroundColor(android.graphics.Color.parseColor("#0F2E2E"))
-        setContentView(webView)
+        // La vista web no respeta su propio margen interno (dibuja debajo igual), así que va dentro
+        // de un contenedor y es el contenedor el que deja el espacio de las barras del sistema.
+        val root = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(android.graphics.Color.parseColor("#0F2E2E"))
+            addView(webView, android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            ))
+        }
+        setContentView(root)
 
         // Android 15 dibuja la app debajo de las barras del sistema: se deja el espacio exacto
         // de la barra de estado, la de navegación y el teclado para que nada quede tapado.
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(
                 androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout(),
             )

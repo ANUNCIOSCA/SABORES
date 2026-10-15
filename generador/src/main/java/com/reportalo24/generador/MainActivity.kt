@@ -30,6 +30,7 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.TextureOverlay
@@ -182,17 +183,55 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Quema la plantilla (PNG transparente) sobre el video y lo guarda en la galería. */
+    /** Encuadre del video elegido en la app (lo mismo que se ve en la vista previa). */
+    private data class VideoFrame(val x: Float = 0f, val y: Float = 0f, val zoom: Float = 1f, val fit: Boolean = false)
+    @Volatile private var frame = VideoFrame()
+
+    /** Ancho y alto del video tal como se ve (girado si el teléfono lo grabó en vertical). */
+    private fun videoSize(uri: android.net.Uri): Pair<Int, Int>? {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(this, uri)
+            val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: return null
+            val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: return null
+            val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            if (rot == 90 || rot == 270) h to w else w to h
+        } catch (e: Exception) { null } finally { r.release() }
+    }
+
     private fun startVideoExport(overlay: Bitmap, width: Int, height: Int, fileName: String) {
         val uri = videoUri ?: return callJs("onVideoError", "Primero elige un video")
         val out = File(cacheDir, "export.mp4").apply { delete() }
+        val f = frame
+        frame = VideoFrame()
+        val overlayEffect = OverlayEffect(ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(overlay)))
 
-        val effects = Effects(
-            listOf(),
+        val videoEffects: List<androidx.media3.common.Effect> = if (f.fit) {
+            // Video completo (con bordes negros), con el zoom y la posición elegidos
+            val m = android.graphics.Matrix().apply { setScale(f.zoom, f.zoom); postTranslate(f.x, -f.y) }
             listOf(
-                Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP),
-                OverlayEffect(ImmutableList.of<TextureOverlay>(BitmapOverlay.createStaticBitmapOverlay(overlay)))
+                Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT),
+                MatrixTransformation { m },
+                overlayEffect,
             )
-        )
+        } else {
+            // Llena la pantalla: se recorta, pero mostrando la parte del video que se eligió.
+            // Coordenadas de -1 a 1: primero se mueve el centro elegido al medio y luego se agranda.
+            val size = videoSize(uri)
+            val target = width.toFloat() / height
+            val src = size?.let { it.first.toFloat() / it.second } ?: target
+            val visX = if (src > target) target / src else 1f
+            val visY = if (src > target) 1f else src / target
+            val cx = f.x * (1f - visX / f.zoom)
+            val cy = -f.y * (1f - visY / f.zoom)
+            val m = android.graphics.Matrix().apply { setTranslate(-cx, -cy); postScale(f.zoom, f.zoom) }
+            listOf(
+                MatrixTransformation { m },
+                Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP),
+                overlayEffect,
+            )
+        }
+        val effects = Effects(listOf(), videoEffects)
         val item = EditedMediaItem.Builder(MediaItem.fromUri(uri)).setEffects(effects).build()
 
         val t = Transformer.Builder(this)
@@ -455,6 +494,14 @@ class MainActivity : ComponentActivity() {
         }
 
         /** Arranca la exportación del video con la plantilla encima. El avance llega a window.onVideoProgress. */
+        @JavascriptInterface
+        /** Igual que [exportVideo] pero con el encuadre elegido (x/y de -1 a 1, zoom, foto completa). */
+        @JavascriptInterface
+        fun exportVideoFramed(overlayDataUrl: String, width: Int, height: Int, fileName: String, x: Double, y: Double, zoom: Double, fit: Boolean): String {
+            frame = VideoFrame(x.toFloat(), y.toFloat(), zoom.toFloat().coerceIn(1f, 4f), fit)
+            return exportVideo(overlayDataUrl, width, height, fileName)
+        }
+
         @JavascriptInterface
         fun exportVideo(overlayDataUrl: String, width: Int, height: Int, fileName: String): String {
             if (videoUri == null) return "Primero elige un video"

@@ -470,6 +470,10 @@
         .gen-bar .btn-image { background: #eef7f7; color: #0f5a5a; border: 2px solid #1a8b8b; }
         .gen-bar .btn { font-size: 14px; padding: 13px 4px; text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .gen-bar .btn-download:not(.visible) { display: none; }
+        .gen-bar .btn-videobar { display: none; background: #c0392b; color: #fff; }
+        body.has-video .gen-bar .btn-videobar { display: block; }
+        body.has-video .gen-bar .btn-download { display: none; }
+        .pv-row { display: flex; gap: 6px; }
         body { padding-bottom: 84px; }
     </style>
 </head>
@@ -483,7 +487,10 @@
         <!-- PREVIEW: es el canvas REAL de 1080x1920 (9:16), escalado visualmente -->
         <div class="preview-wrap" id="previewWrap">
             <canvas id="previewCanvas" width="1080" height="1920"></canvas>
-            <button type="button" class="pv-toggle" id="previewToggle">▲ Ocultar vista previa</button>
+            <div class="pv-row">
+                <button type="button" class="pv-toggle" id="videoPlay" style="display:none">❚❚ Pausar</button>
+                <button type="button" class="pv-toggle" id="previewToggle">▲ Ocultar vista previa</button>
+            </div>
         </div>
 
         <div class="form-section">
@@ -708,6 +715,7 @@
             <button type="button" class="btn btn-image" id="barImageBtn" aria-label="Elegir imagen">📷</button>
             <button class="btn btn-generate" id="generateBtn">✨ Generar</button>
             <button class="btn btn-download" id="downloadBtn">⬇️ Descargar</button>
+            <button type="button" class="btn btn-videobar" id="barVideoBtn">🎥 Video</button>
             <a href="buscador.html" class="btn btn-buscar-noticias">🔎</a>
             </div>
         </div>
@@ -880,7 +888,15 @@
 
         // Dibuja la foto llenando todo sin deformar, con el encuadre elegido
         function drawImageCover(c, img) {
-            var iw = img.naturalWidth, ih = img.naturalHeight;
+            var iw = img.videoWidth || img.naturalWidth, ih = img.videoHeight || img.naturalHeight;
+            if (!iw || !ih) { c.fillStyle = '#10201f'; c.fillRect(0, 0, W, H); return; }
+            if (imgFrame.fit && img.tagName === 'VIDEO') {
+                // En video, "completo" lleva bordes negros (igual que el video que se exporta)
+                c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+                var sv = Math.min(W / iw, H / ih) * imgFrame.zoom;
+                c.drawImage(img, (W - iw * sv) / 2 + imgFrame.x * W / 2, (H - ih * sv) / 2 + imgFrame.y * H / 2, iw * sv, ih * sv);
+                return;
+            }
             if (imgFrame.fit) {
                 // Fondo: la misma foto agrandada y difuminada, para que no queden bordes vacíos
                 var s0 = Math.max(W / iw, H / ih);
@@ -1335,6 +1351,19 @@
 
         // ================= VIDEO CON PLANTILLA (solo en la app Android) =================
         var hasVideo = false;
+        var liveVideo = null;
+        // Dibuja el video en la vista previa mientras se reproduce (unas 15 veces por segundo)
+        (function loop() {
+            var last = 0;
+            var tick = function(t) {
+                if (liveVideo && userImage === liveVideo && !liveVideo.paused && t - last > 66) {
+                    last = t;
+                    try { renderScene(ctx, true); } catch (e) {}
+                }
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        })();
         var VIDEO_BTN_TEXT = '🎥 Exportar VIDEO con plantilla';
         if (window.R24Android && window.R24Android.exportVideo) {
             document.getElementById('videoGroup').style.display = '';
@@ -1346,18 +1375,26 @@
             document.getElementById('videoName').textContent = '✓ ' + file.name;
             hasVideo = true;
             if (generated) document.getElementById('videoBtn').classList.add('visible');
-            // Un cuadro del video sirve de fondo para el preview
-            var frame = window.R24Android.videoFrame();
-            if (frame) {
+            document.getElementById('fileName').textContent = '';
+            // Vista previa en vivo: el video se reproduce (sin sonido) dentro de la plantilla
+            var useStill = function() {
+                var frame = window.R24Android.videoFrame();
+                if (!frame) return;
                 var img = new Image();
-                img.onload = function() {
-                    userImage = img;
-                    document.getElementById('fileName').textContent = '';
-                    if (generated) render();
-                };
+                img.onload = function() { userImage = img; if (generated) render(); else renderScene(ctx, true); };
                 img.src = frame;
-            }
-            showMsg('✅ Video cargado. Genera el preview y toca "Exportar VIDEO".', 'ok');
+            };
+            try {
+                if (liveVideo) { liveVideo.pause(); URL.revokeObjectURL(liveVideo.src); }
+                var v = document.createElement('video');
+                v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', '');
+                v.preload = 'auto';
+                v.onloadeddata = function() { liveVideo = v; userImage = v; v.play().catch(function() {}); };
+                v.onerror = useStill;
+                v.src = URL.createObjectURL(file);
+                liveVideo = v;
+            } catch (er) { useStill(); }
+            showMsg('✅ Video cargado: se ve en movimiento arriba. Encuádralo, toca Generar y luego 🎥 Video.', 'ok');
         });
 
         window.onVideoProgress = function(p) {
@@ -1390,7 +1427,10 @@
                 renderScene(off.getContext('2d'), false);
                 var now = new Date();
                 var ts = now.toISOString().slice(0, 10) + '_' + now.toTimeString().slice(0, 8).replace(/:/g, '-');
-                var res = window.R24Android.exportVideo(off.toDataURL('image/png'), W, H, 'R24_video_' + W + 'x' + H + '_' + ts + '.mp4');
+                var name = 'R24_video_' + W + 'x' + H + '_' + ts + '.mp4';
+                var res = window.R24Android.exportVideoFramed
+                    ? window.R24Android.exportVideoFramed(off.toDataURL('image/png'), W, H, name, imgFrame.x, imgFrame.y, imgFrame.zoom, imgFrame.fit)
+                    : window.R24Android.exportVideo(off.toDataURL('image/png'), W, H, name);
                 if (res !== 'ok') {
                     window.onVideoError(res);
                 } else {
@@ -1794,6 +1834,50 @@
             canvas.addEventListener('pointercancel', end);
             // Si fue un arrastre, no cuenta como toque (no cambia el zoom de la vista previa)
             canvas.addEventListener('click', function(e) { if (moved) { e.stopImmediatePropagation(); moved = false; } }, true);
+        })();
+
+        // ===== Video: botón de la barra, PNG aparte y pausa de la vista previa =====
+        (function() {
+            var bar = document.getElementById('barVideoBtn');
+            var play = document.getElementById('videoPlay');
+            setInterval(function() {
+                document.body.classList.toggle('has-video', hasVideo);
+                var live = liveVideo && userImage === liveVideo;
+                play.style.display = live ? '' : 'none';
+                if (live) play.textContent = liveVideo.paused ? '▶ Reproducir' : '❚❚ Pausar';
+            }, 400);
+            play.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (!liveVideo) return;
+                if (liveVideo.paused) liveVideo.play().catch(function() {}); else liveVideo.pause();
+            });
+            bar.addEventListener('click', function() {
+                // Si aún no se generó, se genera y luego se exporta el video
+                if (!generated) {
+                    document.getElementById('generateBtn').click();
+                    if (!generated) return;
+                }
+                document.getElementById('videoBtn').click();
+            });
+            // El PNG sigue disponible cuando hay video
+            var more = document.querySelector('.export-more');
+            if (more && !document.getElementById('pngBtn')) {
+                var png = document.createElement('button');
+                png.className = 'btn btn-download visible'; png.id = 'pngBtn'; png.type = 'button';
+                png.textContent = '⬇️ Descargar imagen PNG';
+                png.style.display = 'none';
+                png.addEventListener('click', function() { document.getElementById('downloadBtn').click(); });
+                more.insertBefore(png, more.firstChild);
+                setInterval(function() { png.style.display = hasVideo && generated ? '' : 'none'; }, 500);
+            }
+            window.onVideoProgress = function(p) {
+                var t = '⏳ Procesando video... ' + p + '%';
+                document.getElementById('videoBtn').textContent = t;
+                bar.textContent = '⏳ ' + p + '%';
+            };
+            var oldDone = window.onVideoDone, oldErr = window.onVideoError;
+            window.onVideoDone = function(f) { bar.textContent = '🎥 Video'; bar.disabled = false; oldDone(f); };
+            window.onVideoError = function(e) { bar.textContent = '🎥 Video'; bar.disabled = false; oldErr(e); };
         })();
     </script>
 </body>

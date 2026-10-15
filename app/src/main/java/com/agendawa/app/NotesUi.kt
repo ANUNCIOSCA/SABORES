@@ -257,13 +257,9 @@ fun SmartNoteEditorDialog(
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
 
-    val contactLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            ContactPicker.read(context, result.data?.data)?.let {
-                personName = it.displayName
-                personPhone = it.phoneNumber
-            } ?: toast(context, "No se pudo leer el contacto.")
-        }
+    val pickContact = rememberContactPicker {
+        personName = it.displayName
+        personPhone = it.phoneNumber
     }
     val dictate = rememberSpeechInput("Dicta tu idea o nota. Puedes repetir para seguir agregando.") { text ->
         content = if (content.isBlank()) text.replaceFirstChar { it.uppercase() } else "$content\n$text"
@@ -356,10 +352,7 @@ fun SmartNoteEditorDialog(
                     label = { Text("Persona relacionada (opcional)") }, placeholder = { Text("Ej. Carlos, cliente o integrante") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
-                        IconButton(onClick = {
-                            runCatching { contactLauncher.launch(ContactPicker.intent()) }
-                                .onFailure { toast(context, "No se pudo abrir la lista de contactos.") }
-                        }) { Icon(Icons.Rounded.Contacts, "Buscar contacto") }
+                        IconButton(onClick = pickContact) { Icon(Icons.Rounded.Contacts, "Buscar contacto") }
                     },
                     supportingText = { if (personPhone.isNotBlank()) Text("Teléfono: $personPhone") },
                 )

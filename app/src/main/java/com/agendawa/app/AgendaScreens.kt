@@ -669,16 +669,12 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
     var polishing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val contactLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val contact = ContactPicker.read(context, result.data?.data)
-            if (contact != null) {
-                phone = contact.phoneNumber
-                contactName = contact.displayName
-                if (title.isBlank() || title.startsWith("Enviar WhatsApp")) title = "Enviar WhatsApp a ${contact.displayName}"
-                else if (!isWhatsApp && (title.startsWith("Llamar"))) title = "Llamar a ${contact.displayName}"
-            } else toast(context, "No se pudo leer el número del contacto seleccionado.")
-        }
+    // Lista propia con todas las cuentas del teléfono (Google, teléfono, SIM, WhatsApp...)
+    val pickContact = rememberContactPicker { contact ->
+        phone = contact.phoneNumber
+        contactName = contact.displayName
+        if (title.isBlank() || title.startsWith("Enviar WhatsApp")) title = "Enviar WhatsApp a ${contact.displayName}"
+        else if (!isWhatsApp && (title.startsWith("Llamar"))) title = "Llamar a ${contact.displayName}"
     }
     val dictate = rememberSpeechInput("Dicta el texto. Puedes tocar el micrófono otra vez para continuar.") { text ->
         if (isWhatsApp) message = if (message.isBlank()) text else "$message $text"
@@ -755,10 +751,7 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
-                            IconButton(onClick = {
-                                runCatching { contactLauncher.launch(ContactPicker.intent()) }
-                                    .onFailure { toast(context, "No se pudo abrir la aplicación de contactos.") }
-                            }) { Icon(Icons.Rounded.Contacts, "Buscar en mis contactos") }
+                            IconButton(onClick = pickContact) { Icon(Icons.Rounded.Contacts, "Buscar en mis contactos") }
                         },
                         supportingText = { contactName?.let { Text("Contacto seleccionado: $it") } },
                     )

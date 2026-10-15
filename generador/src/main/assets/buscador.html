@@ -102,6 +102,20 @@
         .fo.off { opacity: .45; }
         .falts { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
         .falt { text-align: left; font-size: 13px; padding: 7px 9px; border-radius: 8px; border: 1px dashed #1a8b8b; background: #f4fbfb; color: #111; cursor: pointer; }
+        details.fold { margin-top: 10px; border: 2px solid #e6f1f1; border-radius: 10px; background: #fff; }
+        details.fold > summary { list-style: none; cursor: pointer; padding: 10px 12px; font-weight: 800; font-size: 14px; color: #0f5a5a; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        details.fold > summary::-webkit-details-marker { display: none; }
+        details.fold > summary::after { content: '▾'; color: #1a8b8b; font-size: 16px; transition: transform .2s; flex: 0 0 auto; }
+        details.fold[open] > summary::after { transform: rotate(180deg); }
+        details.fold[open] > summary { border-bottom: 1px solid #e6f1f1; }
+        details.fold { padding: 0 10px; }
+        details.fold[open] { padding-bottom: 12px; }
+        details.fold > summary { margin: 0 -10px; }
+        details.fold .ed { box-sizing: border-box; max-width: 100%; }
+        details.fold .fo { padding: 3px 6px; }
+        .sec-note { font-weight: 600; font-size: 12px; color: #6a8a8a; }
+        .more-acts { display: none; }
+        .card.more-open .more-acts { display: flex; }
         .draftbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: none; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -4px 14px rgba(0,0,0,.25); }
         .draftbar.show { display: flex; }
         .draftbar .btn { flex: 1 1 0; min-width: 0; padding: 10px 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -150,6 +164,8 @@
                 <button class="btn" id="searchBtn">Buscar</button>
             </div>
 
+            <details class="fold" id="filtersFold">
+            <summary><span id="filterSummary">Filtros</span></summary>
             <div class="label">Temas rápidos</div>
             <div class="chips" id="topics"></div>
 
@@ -163,6 +179,7 @@
             <div class="chips" id="tracked"></div>
             <div class="hint" style="margin-top:6px">Busca algo y toca <b>"+ Rastrear este tema"</b>: al abrir el buscador verás cuántas noticias nuevas hay de cada tema.</div>
             <button class="btn btn-light btn-small" id="trackBtn">+ Rastrear este tema</button>
+            </details>
         </div>
 
         <div id="bgBanner"><img alt=""><span></span><button class="btn btn-small btn-light" id="bgClear">Quitar</button></div>
@@ -369,6 +386,7 @@ function groupItems(items) {
 
 // ---------- búsqueda principal ----------
 async function search() {
+    updateFilterSummary();
     var q = document.getElementById('q').value.trim() || state.query || 'Venezuela';
     state.query = q;
     document.getElementById('q').value = q;
@@ -407,11 +425,14 @@ function renderGroups() {
             '<span>' + esc(g.items[0].source) + ' · ' + timeAgo(g.latest) + '</span></div>' +
             '<h3>' + esc(g.title) + '</h3>' +
             '<div class="actions">' +
-            '<button class="btn btn-small" data-act="use">Usar en plantilla</button>' +
+            '<button class="btn btn-small btn-red" data-act="ai">' + (aiProviders().length ? 'Redactar con IA' : 'Armar placa') + '</button>' +
+            '<button class="btn btn-small" data-act="use">Plantilla</button>' +
+            '<button class="btn btn-small btn-light" data-act="toggle-more">⋯ Más</button>' +
+            '</div>' +
+            '<div class="actions more-acts">' +
             '<button class="btn btn-small btn-light" data-act="more">Ver cobertura</button>' +
             '<button class="btn btn-small btn-light" data-act="deep">Profundizar</button>' +
             '<button class="btn btn-small btn-light" data-act="img">Imágenes</button>' +
-            '<button class="btn btn-small btn-red" data-act="ai">' + (aiProviders().length ? 'Redactar con IA' : 'Armar placa') + '</button>' +
             '</div>' +
             '<div class="detail"></div>';
         card.querySelector('[data-act="use"]').onclick = function () { useInTemplate(g.title, '', state.cat, ''); };
@@ -419,6 +440,10 @@ function renderGroups() {
         card.querySelector('[data-act="deep"]').onclick = function () { deepen(card, g); };
         card.querySelector('[data-act="img"]').onclick = function () { showImages(card, g); };
         card.querySelector('[data-act="ai"]').onclick = function () { aiWrite(card, g, false); };
+        card.querySelector('[data-act="toggle-more"]').onclick = function () {
+            var on = card.classList.toggle('more-open');
+            this.textContent = on ? '✕ Menos' : '⋯ Más';
+        };
         box.appendChild(card);
     });
 }
@@ -980,8 +1005,13 @@ function renderDraft(box, card, g, deep, r, readInfo, articles) {
             '<div class="hint">' + esc(readInfo) + '</div>' +
             (alerts.length ? '<div class="redline"><b>Línea roja — revisa antes de publicar:</b>' + list(alerts) + '</div>' : '') +
             (r.dato_que_duele ? '<h4 style="margin-top:6px">El dato que duele</h4><div>' + esc(r.dato_que_duele) + '</div>' : '') +
+            '<details class="fold" data-sec="placa" open><summary>Placa <span class="sec-note">franja · título · subtítulo</span></summary>' +
             '<h4>Elige el ángulo</h4><div class="chips" data-versions></div>' +
             '<div class="hint" data-why style="margin-top:6px"></div>' +
+            '<div class="hint" style="margin-top:8px">Vista previa:</div>' +
+            '<div class="meta"><span class="badge hot" data-p="tag"></span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
+            '<div class="preview-title" data-p="title" style="margin-top:6px"></div>' +
+            '<div class="preview-sub" data-p="sub"></div>' +
             '<div class="hint" style="margin-top:6px">¿Te gusta una parte y otra no? Cambia cada una por separado: toma la de otro ángulo o pide otra con ↻.</div>' +
             '<div class="frow"><label class="hint">Franja roja <span data-count></span></label><span class="fopts" data-fo="tag"></span></div>' +
             '<input class="ed" data-f="tag" maxlength="30"><div class="falts" data-alts="tag"></div>' +
@@ -990,26 +1020,28 @@ function renderDraft(box, card, g, deep, r, readInfo, articles) {
             '<input class="ed" data-f="l2" maxlength="40"><div class="falts" data-alts="title"></div>' +
             '<div class="frow"><label class="hint">Subtítulo</label><span class="fopts" data-fo="sub"></span></div>' +
             '<textarea class="ed" data-f="sub" rows="3" maxlength="220"></textarea><div class="falts" data-alts="sub"></div>' +
-            '<div class="hint" style="margin-top:6px">Vista previa:</div>' +
-            '<div class="meta"><span class="badge hot" data-p="tag"></span><span class="badge">' + esc(r.categoria || '') + '</span></div>' +
-            '<div class="preview-title" data-p="title" style="margin-top:6px"></div>' +
-            '<div class="preview-sub" data-p="sub"></div>' +
+
             '<div class="actions"><button class="btn btn-small" data-act="useai">Usar en plantilla</button>' +
             '<button class="btn btn-small btn-light" data-act="again">Otra versión</button></div>' +
+            '</details>' +
+            '<details class="fold" data-sec="datos"><summary>Datos y verificación <span class="sec-note">' + ((r.verificar || []).length ? (r.verificar || []).length + ' por verificar' : 'resumen') + '</span></summary>' +
             '<h4>Resumen</h4><div>' + esc(r.resumen || '') + '</div>' +
             '<h4>Datos clave</h4>' + list(r.datos_clave) +
             (r.contraste ? '<h4>Qué dicen los medios</h4><div>' + esc(r.contraste) + '</div>' : '') +
             '<h4>Verificar antes de publicar</h4>' + list(r.verificar) +
-            '<h4>Copy para Instagram</h4>' +
+            '</details>' +
+            '<details class="fold" data-sec="ig"><summary>Copy para Instagram <span class="sec-note">listo para pegar</span></summary>' +
             '<textarea class="ed" data-f="copy" rows="9"></textarea>' +
             '<div class="actions">' +
             '<button class="btn btn-small" data-c="ig-save">Guardar</button>' +
             '<button class="btn btn-small btn-light" data-c="ig-redo">Rehacer</button>' +
             '<button class="btn btn-small btn-light" data-c="ig-copy">Copiar</button>' +
             '<button class="btn btn-small btn-light" data-c="ig-share">Compartir</button></div>' +
-            '<h4>Nota para la web</h4>' +
+            '</details>' +
+            '<details class="fold" data-sec="web"><summary>Nota para la web <span class="sec-note">con imagen y descarga</span></summary>' +
             '<div data-web><div class="hint">Nota de 300-500 palabras al estilo R24 con su ficha (titular SEO, meta descripción, extracto, categoría y etiquetas).</div>' +
-            '<div class="actions"><button class="btn btn-small btn-red" data-c="web-make">Redactar nota para la web</button></div></div>';
+            '<div class="actions"><button class="btn btn-small btn-red" data-c="web-make">Redactar nota para la web</button></div></div>' +
+            '</details>';
 
         var cats = ['NACIONAL', 'ECONOMÍA', 'POLÍTICA', 'DEPORTE', 'INTERNACIONAL'];
         var cat = cats.indexOf((r.categoria || '').toUpperCase()) >= 0 ? r.categoria.toUpperCase() : state.cat;
@@ -1554,7 +1586,23 @@ function renderChips(id, list, isOn, onPick) {
         box.appendChild(c);
     });
 }
+function updateFilterSummary() {
+    var el = document.getElementById('filterSummary');
+    if (!el) return;
+    var topic = (TOPICS.find(function (t) { return t.q === state.query; }) || {}).label || (document.getElementById('q').value || 'Búsqueda libre');
+    var range = (RANGES.find(function (r) { return r.v === state.range; }) || {}).label || '';
+    var mode = (SOURCE_MODES.find(function (m) { return m.v === state.mode; }) || {}).label || '';
+    var tracked = (typeof trackedTopics === 'function' ? trackedTopics() : []).length;
+    el.textContent = 'Filtros: ' + [topic, range, mode].filter(Boolean).join(' · ') + (tracked ? ' · ' + tracked + ' rastreados' : '');
+}
+(function () {
+    var f = document.getElementById('filtersFold');
+    if (!f) return;
+    f.open = load('r24_filters_open', false);
+    f.addEventListener('toggle', function () { save('r24_filters_open', f.open); });
+})();
 function drawFilters() {
+    setTimeout(updateFilterSummary, 0);
     renderChips('topics', TOPICS, function (t) { return t.q === state.query; }, function (t) {
         state.query = t.q; state.cat = t.cat; document.getElementById('q').value = t.q; drawFilters(); search();
     });
@@ -1583,6 +1631,7 @@ document.getElementById('trackBtn').onclick = function () {
         save('r24_tracked', topics);
     }
     refreshTracked();
+    updateFilterSummary();
 };
 document.getElementById('settingsBtn').onclick = function () {
     var s = aiSettings();

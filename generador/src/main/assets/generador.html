@@ -432,6 +432,23 @@
             text-align: center;
             text-decoration: none;
         }
+
+        /* ===== Ventanas que se despliegan ===== */
+        details.fold { border: 2px solid #e6f1f1; border-radius: 12px; margin-bottom: 12px; background: #fff; }
+        details.fold > summary { list-style: none; cursor: pointer; padding: 14px 16px; font-weight: 800; color: #0f5a5a; font-size: 15px; display: flex; align-items: center; justify-content: space-between; }
+        details.fold > summary::-webkit-details-marker { display: none; }
+        details.fold > summary::after { content: '▾'; font-size: 18px; transition: transform .2s; color: #1a8b8b; }
+        details.fold[open] > summary::after { transform: rotate(180deg); }
+        details.fold[open] > summary { border-bottom: 1px solid #e6f1f1; }
+        details.fold > .form-group { padding: 0 14px; }
+        details.fold > .form-group:first-of-type { margin-top: 12px; }
+        .export-more .btn { margin-top: 8px; }
+        /* ===== Barra fija abajo ===== */
+        .gen-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: #fff; box-shadow: 0 -4px 14px rgba(0,0,0,.25); }
+        .gen-bar .btn { width: auto; flex: 1 1 0; margin: 0; padding: 14px 8px; font-size: 15px; }
+        .gen-bar .btn-buscar-noticias { flex: 0 0 56px; }
+        .gen-bar .btn-download:not(.visible) { display: none; }
+        body { padding-bottom: 84px; }
     </style>
 </head>
 <body>
@@ -449,41 +466,8 @@
         <div class="form-section">
             <div id="msgBox" class="msg"></div>
 
-            <div class="form-group">
-                <label>🔤 Línea 1 del título <span id="titleSize1Value">62px</span></label>
-                <div class="stepper-row">
-                    <button type="button" class="stepper-btn" id="titleSize1Down" aria-label="Achicar línea 1">−</button>
-                    <input type="range" id="titleSize1" min="20" max="120" step="1" value="62">
-                    <button type="button" class="stepper-btn" id="titleSize1Up" aria-label="Agrandar línea 1">+</button>
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label>🔤 Línea 2 del título <span id="titleSize2Value">62px</span></label>
-                <div class="stepper-row">
-                    <button type="button" class="stepper-btn" id="titleSize2Down" aria-label="Achicar línea 2">−</button>
-                    <input type="range" id="titleSize2" min="20" max="120" step="1" value="62">
-                    <button type="button" class="stepper-btn" id="titleSize2Up" aria-label="Agrandar línea 2">+</button>
-                </div>
-                <button type="button" class="btn btn-zoom" id="zoomBtn">🔍 Guardar y ver de cerca</button>
-                <div class="counter">Cada línea tiene su propia flechita: puedes hacer la línea 1 más grande que la 2, o al revés. "Guardar y ver de cerca" te lo muestra ampliado.</div>
-            </div>
-
-            <div class="form-group">
-                <label>📷 Imagen (desde galería/archivos)</label>
-                <label for="imageInput" class="file-input-label">📁 Toca para elegir imagen</label>
-                <input type="file" id="imageInput" accept="image/*">
-                <div class="file-name" id="fileName"></div>
-            </div>
-
-            <div class="form-group" id="videoGroup" style="display:none;">
-                <label>🎥 Video (opcional)</label>
-                <label for="videoInput" class="file-input-label">🎬 Toca para elegir video</label>
-                <input type="file" id="videoInput" accept="video/*">
-                <div class="file-name" id="videoName"></div>
-                <div class="counter">El video se recorta al formato elegido y la plantilla queda encima. Se conserva el audio.</div>
-            </div>
-
+            <details class="fold" data-fold="texto" open>
+                <summary>📝 Texto de la placa</summary>
             <div class="form-group">
                 <label for="titleInput">📝 Título (máx. 2 líneas)</label>
                 <textarea id="titleInput" placeholder="EJ: TERREMOTO 7.5 EN CARACAS" maxlength="120" style="min-height:60px;"></textarea>
@@ -496,6 +480,22 @@
                 <textarea id="subtitleInput" placeholder="Descripción breve con el dato clave" maxlength="220"></textarea>
                 <div class="counter" id="subtitleCounter">0/220</div>
                 <div class="counter">💡 Presiona Enter donde quieras que el texto baje de línea (máx. 4 líneas). Si no pones Enter, se acomoda solo.</div>
+            </div>
+
+            <div class="form-group">
+                <label>🔴 Etiqueta roja (arriba del título)</label>
+                <div class="logo-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="tagMode" value="si" checked>
+                        <span>Sí</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="tagMode" value="no">
+                        <span>No</span>
+                    </label>
+                </div>
+                <input type="text" id="tagInput" placeholder="EJ: REPORTE DEL DÍA" maxlength="30" value="REPORTE DEL DÍA" style="margin-top:10px;">
+                <div class="counter">Cámbiala: ÚLTIMA HORA · POLÍTICA · SUCESOS · INTERNACIONAL...</div>
             </div>
 
             <div class="form-group">
@@ -528,24 +528,47 @@
                 </div>
             </div>
 
+            </details>
+
+            <details class="fold" data-fold="imagen" open>
+                <summary>📷 Foto o video</summary>
             <div class="form-group">
-                <label>🔴 Etiqueta roja (arriba del título)</label>
-                <div class="logo-toggle">
-                    <label class="toggle-option">
-                        <input type="radio" name="tagMode" value="si" checked>
-                        <span>Sí</span>
-                    </label>
-                    <label class="toggle-option">
-                        <input type="radio" name="tagMode" value="no">
-                        <span>No</span>
-                    </label>
+                <label>📷 Imagen (desde galería/archivos)</label>
+                <label for="imageInput" class="file-input-label">📁 Toca para elegir imagen</label>
+                <input type="file" id="imageInput" accept="image/*">
+                <div class="file-name" id="fileName"></div>
+            </div>
+
+            <div class="form-group" id="videoGroup" style="display:none;">
+                <label>🎥 Video (opcional)</label>
+                <label for="videoInput" class="file-input-label">🎬 Toca para elegir video</label>
+                <input type="file" id="videoInput" accept="video/*">
+                <div class="file-name" id="videoName"></div>
+                <div class="counter">El video se recorta al formato elegido y la plantilla queda encima. Se conserva el audio.</div>
+            </div>
+
+            </details>
+
+            <details class="fold" data-fold="letra">
+                <summary>🔠 Tamaño de letra</summary>
+            <div class="form-group">
+                <label>🔤 Línea 1 del título <span id="titleSize1Value">62px</span></label>
+                <div class="stepper-row">
+                    <button type="button" class="stepper-btn" id="titleSize1Down" aria-label="Achicar línea 1">−</button>
+                    <input type="range" id="titleSize1" min="20" max="120" step="1" value="62">
+                    <button type="button" class="stepper-btn" id="titleSize1Up" aria-label="Agrandar línea 1">+</button>
                 </div>
-                <input type="text" id="tagInput" placeholder="EJ: REPORTE DEL DÍA" maxlength="30" value="REPORTE DEL DÍA" style="margin-top:10px;">
-                <div class="counter">Cámbiala: ÚLTIMA HORA · POLÍTICA · SUCESOS · INTERNACIONAL...</div>
             </div>
 
             <div class="form-group">
-                <div class="counter">🎨 Difuminado fijo: Verde oscuro</div>
+                <label>🔤 Línea 2 del título <span id="titleSize2Value">62px</span></label>
+                <div class="stepper-row">
+                    <button type="button" class="stepper-btn" id="titleSize2Down" aria-label="Achicar línea 2">−</button>
+                    <input type="range" id="titleSize2" min="20" max="120" step="1" value="62">
+                    <button type="button" class="stepper-btn" id="titleSize2Up" aria-label="Agrandar línea 2">+</button>
+                </div>
+                <button type="button" class="btn btn-zoom" id="zoomBtn">🔍 Guardar y ver de cerca</button>
+                <div class="counter">Cada línea tiene su propia flechita: puedes hacer la línea 1 más grande que la 2, o al revés. "Guardar y ver de cerca" te lo muestra ampliado.</div>
             </div>
 
             <div class="form-group">
@@ -568,18 +591,10 @@
                 <div class="counter">Se ajusta automáticamente si no cabe (se actualiza en vivo)</div>
             </div>
 
-            <div class="form-group">
-                <label>📏 Interlineado del título: <span id="titleLineHeightValue">0.90</span> (fijo)</label>
-                <input type="hidden" id="titleLineHeight" value="0.90">
-                <div class="counter">Separación fija entre líneas — ya no se mueve al escrolear</div>
-            </div>
+            </details>
 
-            <div class="form-group">
-                <label>📏 Interlineado del subtítulo: <span id="subtitleLineHeightValue">0.90</span> (fijo)</label>
-                <input type="hidden" id="subtitleLineHeight" value="0.90">
-                <div class="counter">Separación fija entre líneas — ya no se mueve al escrolear</div>
-            </div>
-
+            <details class="fold" data-fold="formato">
+                <summary>📐 Posición y formato</summary>
             <div class="form-group">
                 <label>↕️ Posición del texto: <span id="posValue">0</span></label>
                 <div class="logo-toggle">
@@ -619,11 +634,40 @@
                 <div class="counter">Story/Reel: Estados de WhatsApp, Reels y TikTok · Carrusel: posts cuadrados · Feed vertical: post 4:5, el más grande que permite Instagram en el feed</div>
             </div>
 
-            <button class="btn btn-generate" id="generateBtn">✨ Generar Preview</button>
-            <button class="btn btn-download" id="downloadBtn">⬇️ Descargar PNG (con foto)</button>
+
+            </details>
+
+            <!-- Valores fijos (interlineado y difuminado): se conservan ocultos porque el código los lee -->
+            <div style="display:none">
+            <div class="form-group">
+                <div class="counter">🎨 Difuminado fijo: Verde oscuro</div>
+            </div>
+
+            <div class="form-group">
+                <label>📏 Interlineado del título: <span id="titleLineHeightValue">0.90</span> (fijo)</label>
+                <input type="hidden" id="titleLineHeight" value="0.90">
+                <div class="counter">Separación fija entre líneas — ya no se mueve al escrolear</div>
+            </div>
+
+            <div class="form-group">
+                <label>📏 Interlineado del subtítulo: <span id="subtitleLineHeightValue">0.90</span> (fijo)</label>
+                <input type="hidden" id="subtitleLineHeight" value="0.90">
+                <div class="counter">Separación fija entre líneas — ya no se mueve al escrolear</div>
+            </div>
+
+            </div>
+
+            <div class="export-more">
             <button class="btn btn-transparent" id="transparentBtn">🎬 PNG Transparente (para video)</button>
             <button class="btn btn-video" id="videoBtn">🎥 Exportar VIDEO con plantilla</button>
-            <a href="buscador.html" class="btn btn-buscar-noticias">🔎 Buscar noticias</a>
+            </div>
+
+            <!-- Barra fija abajo: lo que más se usa siempre a mano -->
+            <div class="gen-bar">
+            <button class="btn btn-generate" id="generateBtn">✨ Generar</button>
+            <button class="btn btn-download" id="downloadBtn">⬇️ Descargar</button>
+            <a href="buscador.html" class="btn btn-buscar-noticias">🔎</a>
+            </div>
         </div>
     </div>
 
@@ -1590,6 +1634,12 @@
                 btn.disabled = false;
                 btn.textContent = '🎬 PNG Transparente (para video)';
             }, 50);
+        });
+
+        // Ventanas que se despliegan: se recuerda cuáles dejaste abiertas
+        document.querySelectorAll('details.fold').forEach(function(d) {
+            try { var v = localStorage.getItem('r24_fold_' + d.dataset.fold); if (v !== null) d.open = v === '1'; } catch (e) {}
+            d.addEventListener('toggle', function() { try { localStorage.setItem('r24_fold_' + d.dataset.fold, d.open ? '1' : '0'); } catch (e) {} });
         });
     </script>
 </body>

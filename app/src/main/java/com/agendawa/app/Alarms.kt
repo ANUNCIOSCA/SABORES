@@ -354,6 +354,35 @@ object NotificationHelper {
         return builder.build()
     }
 
+    /** La alarma sonó 5 minutos y nadie la atendió: queda este aviso (sin sonido) con sus acciones. */
+    fun showMissed(context: Context, task: AgendaTask) {
+        createChannels(context)
+        if (!notificationsAllowed(context)) return
+        val open = PendingIntent.getActivity(
+            context, task.id.hashCode() + 3,
+            Intent(context, AlarmActivity::class.java)
+                .putExtra(ReminderScheduler.EXTRA_TASK_ID, task.id)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = NotificationCompat.Builder(context, PRE_ALERT_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(ProfileStore.personalized(context, if (task.isWhatsApp) "no se envió este WhatsApp" else "no atendiste este aviso"))
+            .setContentText(task.title)
+            .setSubText("Aviso perdido · ${formatDate(task.dateTimeMillis, "h:mm a")}")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText(task)))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setContentIntent(open)
+        whatsappAction(context, task, builder)
+        callAction(context, task, builder)
+        builder.addAction(0, "Recordarme en 5 min", actionIntent(context, task, AlarmActionReceiver.ACTION_SNOOZE, 2))
+        if (!task.isWhatsApp && !PhoneCall.isCall(task)) builder.addAction(0, "Hecho", actionIntent(context, task, AlarmActionReceiver.ACTION_STOP, 1))
+        runCatching { NotificationManagerCompat.from(context).notify(task.id.hashCode(), builder.build()) }
+    }
+
     fun showReminder(context: Context, task: AgendaTask) {
         if (!notificationsAllowed(context)) return
         runCatching { NotificationManagerCompat.from(context).notify(task.id.hashCode(), buildAlarmNotification(context, task)) }
@@ -445,6 +474,40 @@ object AlarmCapabilities {
         } else openAppDetails(context)
     }
 
+    /** El teléfono no frena a la app para ahorrar batería (si la frena, las alarmas pueden llegar tarde o no sonar). */
+    fun ignoresBatteryOptimizations(context: Context): Boolean =
+        context.getSystemService(android.os.PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+
+    @android.annotation.SuppressLint("BatteryLife")
+    fun openBatterySettings(context: Context) {
+        runCatching {
+            context.startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.recoverCatching {
+            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure { openAppDetails(context) }
+    }
+
+    /** Pasos extra según la marca del teléfono (estas marcas frenan las alarmas aunque se dé el permiso). */
+    fun brandTip(): String? {
+        val brand = (Build.MANUFACTURER ?: "").lowercase()
+        return when {
+            "xiaomi" in brand || "redmi" in brand || "poco" in brand ->
+                "En Xiaomi/Redmi: Ajustes › Apps › Agenda WA › Ahorro de batería › Sin restricciones, y activa \"Inicio automático\"."
+            "huawei" in brand || "honor" in brand ->
+                "En Huawei/Honor: Ajustes › Batería › Inicio de aplicaciones › Agenda WA › Gestionar manualmente y activa todo."
+            "samsung" in brand ->
+                "En Samsung: Ajustes › Batería › Límites de uso en segundo plano › quita Agenda WA de \"Apps en suspensión\"."
+            "oppo" in brand || "realme" in brand || "oneplus" in brand || "vivo" in brand ->
+                "En $brand: Ajustes › Batería › Agenda WA › permite actividad en segundo plano e inicio automático."
+            "tecno" in brand || "infinix" in brand || "itel" in brand ->
+                "En Tecno/Infinix: Phone Master o Ajustes › Batería › Agenda WA › permite que funcione en segundo plano e inicio automático."
+            else -> null
+        }
+    }
+
     fun openAppDetails(context: Context) {
         runCatching {
             context.startActivity(
@@ -463,10 +526,26 @@ class AlarmSoundService : Service() {
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var activeTaskId: Long = -1L
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** Si nadie la atiende, la alarma se calla sola y queda un aviso perdido con sus botones. */
+    private val timeout = Runnable {
+        val id = activeTaskId
+        releasePlayback()
+        runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        lastTimedOut = id
+        TaskStore.find(this, id)?.takeIf { !it.completed }?.let { NotificationHelper.showMissed(this, it) }
+        stopSelf()
+    }
 
     companion object {
         private const val ACTION_START = "com.agendawa.app.ALARM_START"
         private const val ACTION_STOP = "com.agendawa.app.ALARM_STOP"
+        /** Cuánto suena como máximo. */
+        const val RING_LIMIT_MS = 5 * 60_000L
+
+        /** Último aviso que se calló solo: la pantalla de alarma de ese aviso se cierra. */
+        @Volatile var lastTimedOut: Long = -1L
 
         fun start(context: Context, taskId: Long) {
             val intent = Intent(context, AlarmSoundService::class.java)
@@ -495,6 +574,9 @@ class AlarmSoundService : Service() {
             return START_NOT_STICKY
         }
         activeTaskId = task.id
+        if (lastTimedOut == task.id) lastTimedOut = -1L
+        handler.removeCallbacks(timeout)
+        handler.postDelayed(timeout, RING_LIMIT_MS)
         val notification = NotificationHelper.buildAlarmNotification(this, task)
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(task.id.hashCode(), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -554,12 +636,14 @@ class AlarmSoundService : Service() {
     }
 
     private fun stopAlarm() {
+        handler.removeCallbacks(timeout)
         releasePlayback()
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         stopSelf()
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(timeout)
         releasePlayback()
         super.onDestroy()
     }

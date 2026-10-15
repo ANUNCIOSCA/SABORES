@@ -95,6 +95,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -239,6 +240,14 @@ fun AgendaWaApp(
         }
         ReminderScheduler.rescheduleAll(context)
         ExpenseReminder.apply(context)
+        // Una sola vez: si el teléfono frena la app para ahorrar batería, las alarmas pueden fallar
+        val prefs = context.getSharedPreferences("agenda_wa_profile", Context.MODE_PRIVATE)
+        if (!AlarmCapabilities.ignoresBatteryOptimizations(context) && !prefs.getBoolean("battery_hint_shown", false)) {
+            prefs.edit().putBoolean("battery_hint_shown", true).apply()
+            delay(2500)
+            while (showWelcome || locked.value) delay(1000)
+            showAlarmSettings = true
+        }
     }
 
     // Intents externos
@@ -484,6 +493,13 @@ fun AgendaWaApp(
         // Varios grupos: se muestra la lista para abrirlos uno por uno o enviar a todos
         if (task.toGroup && task.groups.size > 1) sendTask = task
         else if (!WhatsApp.send(context, task)) showMessage("No se pudo abrir WhatsApp.")
+        else if (!task.completed) {
+            // Se abrió WhatsApp con el mensaje: el aviso queda hecho (o pasa a su próxima fecha) y no vuelve a sonar
+            val updated = state.setCompleted(task, true)
+            AlarmSoundService.stop(context)
+            NotificationHelper.cancelAllForTask(context, task.id)
+            showMessage(if (!updated.completed) "Enviado. Próximo: ${spokenWhen(updated.dateTimeMillis)}" else "Marcado como enviado. Si no lo enviaste, desmárcalo en la lista.")
+        }
     }
 
     val taskActions = TaskActions(
@@ -995,6 +1011,9 @@ private fun AlarmSettingsDialog(
     val notifications = remember(refresh) { NotificationHelper.notificationsAllowed(context) }
     val exact = remember(refresh) { ReminderScheduler.canScheduleExact(context) }
     val fullScreen = remember(refresh) { AlarmCapabilities.canUseFullScreen(context) }
+    val battery = remember(refresh) { AlarmCapabilities.ignoresBatteryOptimizations(context) }
+    // Al volver de los ajustes del teléfono, se ve el estado nuevo
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1500); refresh++ } }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1010,6 +1029,18 @@ private fun AlarmSettingsDialog(
                 PermissionRow("Notificaciones", notifications) { onRequestNotifications(); refresh++ }
                 PermissionRow("Alarmas exactas", exact) { AlarmCapabilities.openExactAlarmSettings(context); refresh++ }
                 PermissionRow("Pantalla de alarma", fullScreen) { AlarmCapabilities.openFullScreenSettings(context); refresh++ }
+                PermissionRow("Sin ahorro de batería", battery) { AlarmCapabilities.openBatterySettings(context); refresh++ }
+                if (!battery) {
+                    Text(
+                        "Si el teléfono frena la app para ahorrar batería, las alarmas pueden llegar tarde o no sonar.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                AlarmCapabilities.brandTip()?.let { tip ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(tip, style = MaterialTheme.typography.bodySmall, color = AgendaDanger)
+                    TextButton(onClick = { AlarmCapabilities.openAppDetails(context) }) { Text("Abrir ajustes de la app") }
+                }
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(onClick = { NotificationHelper.openSoundSettings(context) }, modifier = Modifier.fillMaxWidth()) {
                     Text("Cambiar sonido de alarma del teléfono")

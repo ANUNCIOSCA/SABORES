@@ -85,6 +85,8 @@ class AlarmActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         taskId.longValue = intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L)
+        // Abierta de nuevo (por ejemplo, desde el aviso perdido): no se cierra sola
+        if (AlarmSoundService.lastTimedOut == taskId.longValue) AlarmSoundService.lastTimedOut = -1L
         setContent {
             AgendaWaTheme {
                 val task = remember(taskId.longValue) { TaskStore.find(this, taskId.longValue) }
@@ -103,6 +105,7 @@ class AlarmActivity : ComponentActivity() {
                             PhoneCall.open(this, task.phone)
                             finish()
                         },
+                        onTimeout = { finish() },
                     )
                 }
             }
@@ -117,6 +120,7 @@ class AlarmActivity : ComponentActivity() {
             return
         }
         taskId.longValue = intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L)
+        if (AlarmSoundService.lastTimedOut == taskId.longValue) AlarmSoundService.lastTimedOut = -1L
     }
 }
 
@@ -129,10 +133,15 @@ private fun AlarmScreen(
     onDelete: () -> Unit,
     onWhatsApp: () -> Unit,
     onCall: () -> Unit,
+    onTimeout: () -> Unit = {},
 ) {
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
-        while (true) { delay(1000); now = System.currentTimeMillis() }
+        while (true) {
+            delay(1000); now = System.currentTimeMillis()
+            // La alarma se calló sola (5 min sin atenderla): se cierra la pantalla y queda el aviso perdido
+            if (AlarmSoundService.lastTimedOut == task.id) { AlarmSoundService.lastTimedOut = -1L; onTimeout() }
+        }
     }
     val headline = (if (name.isBlank()) "" else "$name, ") + (if (task.isWhatsApp) "tienes un WhatsApp pendiente" else "tienes un recordatorio")
     Box(

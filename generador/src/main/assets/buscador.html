@@ -77,6 +77,9 @@
         .gsrc { font-size: 11px; color: #555; padding: 4px 6px 0; }
         .gbtns { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
         .gbtns .btn { width: 100%; }
+        .wimg-thumbs { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0; }
+        .wthumb { width: 72px; height: 54px; object-fit: cover; border-radius: 6px; border: 2px solid transparent; flex: 0 0 auto; cursor: pointer; }
+        .wthumb.on { border-color: #d61f2c; }
         .gnoprev { aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; font-size: 12px; color: #666; background: #e9eeee; }
         .glink { font-size: 11px; color: #1a6b8b; padding: 0 6px 6px; word-break: break-all; user-select: text; -webkit-user-select: text; }
         #bgBanner { display: none; align-items: center; gap: 10px; background: #fff; border-radius: 12px; padding: 8px 10px; box-shadow: 0 3px 10px rgba(0,0,0,.18); }
@@ -1014,12 +1017,24 @@ function renderDraft(box, card, g, deep, r, readInfo, articles) {
                 var w = await aiCall(buildWebPrompt(g, articles, val, prev));
                 var text = formatWeb(w);
                 webBox.innerHTML = '<textarea class="ed" data-f="web" rows="16"></textarea>' +
+                    '<h4>Imagen destacada</h4><div data-imgpick></div>' +
                     '<div class="actions"><button class="btn btn-small" data-c="web-save">Guardar</button>' +
                     '<button class="btn btn-small btn-light" data-c="web-redo">Rehacer</button>' +
                     '<button class="btn btn-small btn-light" data-c="web-copy">Copiar</button>' +
-                    '<button class="btn btn-small btn-light" data-c="web-share">Compartir</button></div>';
+                    '<button class="btn btn-small btn-light" data-c="web-share">Compartir</button></div>' +
+                    '<div class="actions"><button class="btn btn-small btn-red" data-c="web-dl">Descargar (.txt)</button>' +
+                    '<button class="btn btn-small btn-light" data-c="web-dl-html">Descargar HTML (WordPress)</button></div>';
                 var t = webBox.querySelector('textarea');
                 t.value = text;
+                var pickImg = webImagePicker(webBox.querySelector('[data-imgpick]'), articles, t);
+                webBox.querySelector('[data-c="web-dl"]').onclick = function () {
+                    pickImg.apply();
+                    downloadText(webFileName(t.value, 'txt'), 'text/plain', t.value, this);
+                };
+                webBox.querySelector('[data-c="web-dl-html"]').onclick = function () {
+                    pickImg.apply();
+                    downloadText(webFileName(t.value, 'html'), 'text/html', webHtml(t.value, pickImg.get()), this);
+                };
                 webBox.querySelector('[data-c="web-copy"]').onclick = function () { copyText(t.value); flash(this, 'Copiado'); };
                 webBox.querySelector('[data-c="web-share"]').onclick = function () { shareText(t.value); };
                 webBox.querySelector('[data-c="web-save"]').onclick = function () { saveItem('Web', w.titular || currentTitle(), t.value); flash(this, 'Guardado'); };
@@ -1030,6 +1045,132 @@ function renderDraft(box, card, g, deep, r, readInfo, articles) {
             }
         };
         box.querySelector('[data-c="web-make"]').onclick = makeWeb;
+}
+
+// ---------- imagen destacada y descarga de la nota web ----------
+// Fotos de las notas leídas: se elige una, su enlace y crédito quedan dentro de la nota (y en lo que se descarga)
+function webImagePicker(box, articles, textarea) {
+    var imgs = [], seen = {};
+    // Si ya elegiste una foto de fondo para la placa, va primero
+    if (typeof chosenBg !== 'undefined' && chosenBg && chosenBg.url) {
+        seen[chosenBg.url.replace(/[?#].*$/, '')] = 1;
+        imgs.push({ url: chosenBg.url, source: chosenBg.source || '', page: chosenBg.page || '' });
+    }
+    (articles || []).forEach(function (r) {
+        (r.art.images || []).forEach(function (u) {
+            var key = u.replace(/[?#].*$/, '');
+            if (!seen[key]) { seen[key] = 1; imgs.push({ url: u, source: r.item.source, page: r.art.url || r.item.link }); }
+        });
+    });
+    var sel = { url: imgs.length ? imgs[0].url : '', credit: imgs.length && imgs[0].source ? 'Foto: ' + imgs[0].source : '', page: imgs.length ? imgs[0].page : '' };
+    box.innerHTML =
+        '<div class="wimg-main"></div>' +
+        (imgs.length > 1 ? '<div class="hint">Toca otra foto para cambiarla:</div><div class="wimg-thumbs"></div>' : '') +
+        (imgs.length ? '' : '<div class="hint">No encontré fotos en las notas leídas. Pega el enlace de una imagen (por ejemplo, desde el botón Imágenes).</div>') +
+        '<label class="hint">Enlace de la imagen</label><input class="ed" data-w="url" placeholder="https://...jpg">' +
+        '<label class="hint">Crédito</label><input class="ed" data-w="credit" placeholder="Foto: medio o autor">' +
+        '<div class="actions"><button class="btn btn-small btn-light" data-w="copy">Copiar enlace</button>' +
+        '<button class="btn btn-small btn-light" data-w="open">Abrir imagen</button>' +
+        '<button class="btn btn-small btn-light" data-w="save">Guardar foto</button></div>';
+    var urlIn = box.querySelector('[data-w="url"]'), creditIn = box.querySelector('[data-w="credit"]');
+    var main = box.querySelector('.wimg-main');
+    var showMain = function () {
+        main.innerHTML = sel.url ? '<img referrerpolicy="no-referrer" src="' + esc(sel.url) + '" style="width:100%;max-height:220px;object-fit:cover;border-radius:10px">' : '';
+        var im = main.querySelector('img');
+        if (im) im.onerror = function () { main.innerHTML = '<div class="gnoprev">Vista previa no disponible · el enlace sirve igual</div>'; };
+    };
+    var apply = function () {
+        sel.url = urlIn.value.trim(); sel.credit = creditIn.value.trim();
+        // Quita las líneas anteriores de la imagen y pone las nuevas antes de la firma
+        var lines = textarea.value.split('\n').filter(function (l) { return !/^(Enlace de la imagen|Crédito de la imagen):/.test(l); });
+        if (sel.url) {
+            var add = ['Enlace de la imagen: ' + sel.url];
+            if (sel.credit) add.push('Crédito de la imagen: ' + sel.credit);
+            var at = lines.findIndex(function (l) { return /^Firma:/.test(l); });
+            if (at < 0) lines = lines.concat(add); else lines.splice.apply(lines, [at, 0].concat(add));
+        }
+        textarea.value = lines.join('\n');
+        showMain();
+    };
+    urlIn.value = sel.url; creditIn.value = sel.credit;
+    urlIn.onchange = apply; creditIn.onchange = apply;
+    var thumbs = box.querySelector('.wimg-thumbs');
+    if (thumbs) imgs.slice(0, 10).forEach(function (im, i) {
+        var c = document.createElement('img');
+        c.src = im.url; c.referrerPolicy = 'no-referrer'; c.loading = 'lazy';
+        c.className = 'wthumb' + (i === 0 ? ' on' : '');
+        c.onerror = function () { c.remove(); };
+        c.onclick = function () {
+            urlIn.value = im.url; creditIn.value = 'Foto: ' + im.source; sel.page = im.page;
+            Array.prototype.forEach.call(thumbs.children, function (x) { x.classList.toggle('on', x === c); });
+            apply();
+        };
+        thumbs.appendChild(c);
+    });
+    box.querySelector('[data-w="copy"]').onclick = function () { if (urlIn.value.trim()) copyText(urlIn.value.trim()); };
+    box.querySelector('[data-w="open"]').onclick = function () { if (urlIn.value.trim()) openUrl(urlIn.value.trim()); };
+    box.querySelector('[data-w="save"]').onclick = function () {
+        var u = urlIn.value.trim(); if (!u) return;
+        var btn = this;
+        if (window.R24Android && window.R24Android.saveImageUrl) {
+            btn.disabled = true; btn.textContent = 'Guardando...';
+            bridgeCall('saveImageUrl', [u, 'R24_nota_' + Date.now()])
+                .then(function () { btn.textContent = 'Guardada ✓'; })
+                .catch(function (e) { btn.textContent = 'Guardar foto'; alert(e.message || e); })
+                .then(function () { btn.disabled = false; });
+        } else openUrl(u);
+    };
+    apply();
+    return { apply: apply, get: function () { return { url: urlIn.value.trim(), credit: creditIn.value.trim() }; } };
+}
+
+function webFileName(text, ext) {
+    var first = (text.split('\n')[0] || 'nota').trim();
+    var slug = norm(first).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'nota';
+    var d = new Date();
+    var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0') + '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0');
+    return 'r24-' + slug + '-' + stamp + '.' + ext;
+}
+
+// La nota en HTML listo para pegar en WordPress (editor de código) o abrir en el navegador
+function webHtml(text, img) {
+    var parts = text.split(/\n?— FICHA DE PUBLICACIÓN —\n?/);
+    var lines = parts[0].split('\n');
+    var title = (lines.shift() || '').trim();
+    var body = lines.join('\n').trim().split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
+    var ficha = (parts[1] || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    var fv = function (k) { var l = ficha.find(function (x) { return x.indexOf(k + ':') === 0; }); return l ? l.slice(k.length + 1).trim() : ''; };
+    var meta = fv('Meta descripción');
+    return '<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
+        '<title>' + esc(fv('Titular SEO') || title) + '</title>\n' +
+        (meta ? '<meta name="description" content="' + esc(meta) + '">\n' : '') +
+        (img.url ? '<meta property="og:image" content="' + esc(img.url) + '">\n' : '') +
+        '<style>body{font-family:Georgia,serif;max-width:720px;margin:24px auto;padding:0 16px;line-height:1.6;color:#111}' +
+        'h1{font-family:Arial,sans-serif;line-height:1.2}figure{margin:16px 0}img{width:100%;height:auto}figcaption{font-size:13px;color:#555}' +
+        '.ficha{font-family:Arial,sans-serif;font-size:14px;background:#f4f4f4;padding:12px 16px;border-radius:8px}</style>\n</head>\n<body>\n<article>\n' +
+        '<h1>' + esc(title) + '</h1>\n' +
+        (img.url ? '<figure>\n<img src="' + esc(img.url) + '" alt="' + esc(title) + '">\n' + (img.credit ? '<figcaption>' + esc(img.credit) + '</figcaption>\n' : '') + '</figure>\n' : '') +
+        body.filter(function (p) { return !/^(Enlace de la imagen|Crédito de la imagen):/.test(p); }).map(function (p) { return '<p>' + esc(p).replace(/\n/g, '<br>') + '</p>'; }).join('\n') +
+        '\n</article>\n' +
+        (ficha.length ? '<hr>\n<div class="ficha">\n<b>Ficha de publicación</b>\n<ul>\n' + ficha.map(function (l) {
+            var m = l.match(/^Enlace de la imagen:\s*(\S+)/);
+            return '<li>' + (m ? 'Enlace de la imagen: <a href="' + esc(m[1]) + '">' + esc(m[1]) + '</a>' : esc(l)) + '</li>';
+        }).join('\n') + '\n</ul>\n</div>\n' : '') +
+        '</body>\n</html>\n';
+}
+
+function downloadText(fileName, mime, content, btn) {
+    var done = function (msg) { if (!btn) return; var old = btn.textContent; btn.textContent = msg; setTimeout(function () { btn.textContent = old; }, 2000); };
+    if (window.R24Android && window.R24Android.saveTextFile) {
+        var r = window.R24Android.saveTextFile(fileName, mime, content);
+        if (r === 'ok') done('Descargado ✓'); else alert(r);
+        return;
+    }
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], { type: mime + ';charset=utf-8' }));
+    a.download = fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    done('Descargado ✓');
 }
 
 // ---------- copy, nota web y guardados ----------
@@ -1139,8 +1280,20 @@ function openSaved() {
             '<div class="actions"><button class="btn btn-small" data-s="copy">Copiar</button>' +
             '<button class="btn btn-small btn-light" data-s="share">Compartir</button>' +
             '<button class="btn btn-small btn-light" data-s="upd">Guardar cambios</button>' +
-            '<button class="btn btn-small btn-light" data-s="del">Borrar</button></div>';
+            '<button class="btn btn-small btn-light" data-s="del">Borrar</button></div>' +
+            (it.type === 'Web' ? '<div class="actions"><button class="btn btn-small btn-red" data-s="dl">Descargar (.txt)</button>' +
+                '<button class="btn btn-small btn-light" data-s="dlh">Descargar HTML</button></div>' : '');
         var t = el.querySelector('textarea'); t.value = it.text;
+        if (it.type === 'Web') {
+            // El enlace y crédito de la imagen viajan dentro del texto guardado
+            var imgOf = function () {
+                var u = (t.value.match(/^Enlace de la imagen:\s*(\S+)/m) || [])[1] || '';
+                var c = (t.value.match(/^Crédito de la imagen:\s*(.+)$/m) || [])[1] || '';
+                return { url: u, credit: c.trim() };
+            };
+            el.querySelector('[data-s="dl"]').onclick = function () { downloadText(webFileName(t.value, 'txt'), 'text/plain', t.value, this); };
+            el.querySelector('[data-s="dlh"]').onclick = function () { downloadText(webFileName(t.value, 'html'), 'text/html', webHtml(t.value, imgOf()), this); };
+        }
         el.querySelector('[data-s="copy"]').onclick = function () { copyText(t.value); this.textContent = 'Copiado'; };
         el.querySelector('[data-s="share"]').onclick = function () { shareText(t.value); };
         el.querySelector('[data-s="upd"]').onclick = function () {

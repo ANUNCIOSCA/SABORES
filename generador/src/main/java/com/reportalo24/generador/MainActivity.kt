@@ -370,6 +370,38 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        /** Guarda un texto (nota para la web en .txt o .html) en Descargas › Reportalo24. Devuelve "ok" o el error. */
+        @JavascriptInterface
+        fun saveTextFile(fileName: String, mime: String, content: String): String {
+            return try {
+                if (!hasLegacyStoragePermission()) {
+                    runOnUiThread { requestStorage.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+                    return "Da permiso de almacenamiento y vuelve a tocar el botón"
+                }
+                val bytes = content.toByteArray(Charsets.UTF_8)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                        put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Reportalo24")
+                    }
+                    val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("No se pudo crear el archivo")
+                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("No se pudo escribir el archivo")
+                } else {
+                    @Suppress("DEPRECATION")
+                    val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Reportalo24")
+                    dir.mkdirs()
+                    val file = File(dir, fileName)
+                    FileOutputStream(file).use { it.write(bytes) }
+                    MediaScannerConnection.scanFile(this@MainActivity, arrayOf(file.absolutePath), arrayOf(mime), null)
+                }
+                runOnUiThread { Toast.makeText(this@MainActivity, "Guardado en Descargas › Reportalo24 › $fileName", Toast.LENGTH_LONG).show() }
+                "ok"
+            } catch (e: Exception) {
+                e.message ?: "Error desconocido"
+            }
+        }
+
         /** Copia texto (copy de Instagram, hashtags) al portapapeles. */
         @JavascriptInterface
         fun copyText(text: String) {

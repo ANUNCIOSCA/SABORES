@@ -370,6 +370,16 @@
         }
         .preview-wrap.collapsed { padding-top: 6px; padding-bottom: 6px; }
         .preview-wrap.collapsed #previewCanvas { display: none; }
+        /* Encuadre de la foto */
+        .frame-pad { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 6px 0 10px; }
+        .frame-row { display: flex; gap: 6px; }
+        .fbtn { min-width: 52px; height: 46px; border-radius: 10px; border: 2px solid #1a8b8b; background: #eef7f7; color: #0f5a5a; font-size: 18px; font-weight: 700; }
+        .fbtn.fcenter { font-size: 14px; padding: 0 14px; }
+        .frame-slider { display: flex; align-items: center; gap: 8px; }
+        .frame-slider input { flex: 1; }
+        .frame-slider b { min-width: 46px; text-align: right; color: #0f5a5a; font-size: 13px; }
+        #frameFit.active { background: #1a8b8b; color: #fff; }
+        #previewCanvas.draggable { touch-action: none; cursor: grab; }
         .preview-wrap.zoomed #previewCanvas {
             max-width: 100%;
             height: min(78vh, 760px);
@@ -550,6 +560,24 @@
                 <label for="imageInput" class="file-input-label">📁 Toca para elegir imagen</label>
                 <input type="file" id="imageInput" accept="image/*">
                 <div class="file-name" id="fileName"></div>
+            </div>
+
+            <div class="form-group" id="frameGroup" style="display:none;">
+                <label>🎯 Encuadre de la foto</label>
+                <div class="frame-pad">
+                    <button type="button" class="fbtn" data-move="0,-1">▲</button>
+                    <div class="frame-row">
+                        <button type="button" class="fbtn" data-move="-1,0">◀</button>
+                        <button type="button" class="fbtn fcenter" id="frameCenter">Centrar</button>
+                        <button type="button" class="fbtn" data-move="1,0">▶</button>
+                    </div>
+                    <button type="button" class="fbtn" data-move="0,1">▼</button>
+                </div>
+                <div class="frame-slider"><span>↔️</span><input type="range" id="frameX" min="-100" max="100" value="0"></div>
+                <div class="frame-slider"><span>↕️</span><input type="range" id="frameY" min="-100" max="100" value="0"></div>
+                <div class="frame-slider"><span>🔍</span><input type="range" id="frameZoom" min="100" max="300" value="100"><b id="frameZoomVal">100%</b></div>
+                <button type="button" class="btn btn-zoom" id="frameFit">🖼️ Mostrar la foto completa (sin recortar)</button>
+                <div class="counter">También puedes arrastrar la foto con el dedo sobre la vista previa.</div>
             </div>
 
             <div class="form-group" id="videoGroup" style="display:none;">
@@ -846,14 +874,29 @@
             return { lines: lines2, size: absoluteMin, font: f2, truncated: truncated };
         }
 
-        // Dibuja imagen tipo "cover" (llena todo sin deformar)
+        // Encuadre de la foto: x/y de -1 a 1 (izquierda/arriba a derecha/abajo), zoom 1 a 3,
+        // fit = foto completa sin recortar (con la misma foto difuminada de fondo)
+        var imgFrame = { x: 0, y: 0, zoom: 1, fit: false };
+
+        // Dibuja la foto llenando todo sin deformar, con el encuadre elegido
         function drawImageCover(c, img) {
             var iw = img.naturalWidth, ih = img.naturalHeight;
-            var scale = Math.max(W / iw, H / ih);
-            var sw = W / scale, sh = H / scale;
-            var sx = (iw - sw) / 2;
-            var sy = (ih - sh) / 2;
-            c.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+            if (imgFrame.fit) {
+                // Fondo: la misma foto agrandada y difuminada, para que no queden bordes vacíos
+                var s0 = Math.max(W / iw, H / ih);
+                c.save();
+                try { c.filter = 'blur(40px) brightness(0.65)'; } catch (e) {}
+                c.drawImage(img, (W - iw * s0) / 2, (H - ih * s0) / 2, iw * s0, ih * s0);
+                c.restore();
+                var s1 = Math.min(W / iw, H / ih) * imgFrame.zoom;
+                var fw = iw * s1, fh = ih * s1;
+                c.drawImage(img, (W - fw) / 2 + imgFrame.x * W / 2, (H - fh) / 2 + imgFrame.y * H / 2, fw, fh);
+                return;
+            }
+            var scale = Math.max(W / iw, H / ih) * imgFrame.zoom;
+            var dw = iw * scale, dh = ih * scale;
+            var slackX = dw - W, slackY = dh - H;
+            c.drawImage(img, -slackX / 2 - imgFrame.x * slackX / 2, -slackY / 2 - imgFrame.y * slackY / 2, dw, dh);
         }
 
         // ================= RENDER PRINCIPAL =================
@@ -1680,6 +1723,77 @@
                 if (fold) fold.open = true;
                 document.getElementById('imageInput').click();
             });
+        })();
+
+        // ===== Encuadre de la foto: botones, deslizadores y arrastrar con el dedo =====
+        (function() {
+            var group = document.getElementById('frameGroup');
+            var fx = document.getElementById('frameX'), fy = document.getElementById('frameY'), fz = document.getElementById('frameZoom');
+            var fit = document.getElementById('frameFit');
+            var lastImg = null;
+            var redraw = function() {
+                if (!userImage) return;
+                if (generated) render(); else renderScene(ctx, true);
+            };
+            var sync = function() {
+                fx.value = Math.round(imgFrame.x * 100); fy.value = Math.round(imgFrame.y * 100);
+                fz.value = Math.round(imgFrame.zoom * 100);
+                document.getElementById('frameZoomVal').textContent = Math.round(imgFrame.zoom * 100) + '%';
+                fit.classList.toggle('active', imgFrame.fit);
+                fit.textContent = imgFrame.fit ? '✂️ Llenar la pantalla (recortar)' : '🖼️ Mostrar la foto completa (sin recortar)';
+            };
+            var clamp = function(v) { return Math.max(-1, Math.min(1, v)); };
+            var set = function(x, y) { imgFrame.x = clamp(x); imgFrame.y = clamp(y); sync(); redraw(); };
+            fx.addEventListener('input', function() { imgFrame.x = fx.value / 100; redraw(); });
+            fy.addEventListener('input', function() { imgFrame.y = fy.value / 100; redraw(); });
+            fz.addEventListener('input', function() { imgFrame.zoom = fz.value / 100; sync(); redraw(); });
+            Array.prototype.forEach.call(group.querySelectorAll('[data-move]'), function(b) {
+                b.addEventListener('click', function() {
+                    var m = b.getAttribute('data-move').split(',');
+                    set(imgFrame.x + 0.15 * parseFloat(m[0]), imgFrame.y + 0.15 * parseFloat(m[1]));
+                });
+            });
+            document.getElementById('frameCenter').addEventListener('click', function() { imgFrame.zoom = 1; set(0, 0); });
+            fit.addEventListener('click', function() { imgFrame.fit = !imgFrame.fit; imgFrame.x = 0; imgFrame.y = 0; imgFrame.zoom = 1; sync(); redraw(); });
+
+            // Foto nueva: encuadre desde el centro; el panel aparece solo cuando hay foto
+            setInterval(function() {
+                group.style.display = userImage ? '' : 'none';
+                canvas.classList.toggle('draggable', !!userImage);
+                if (userImage !== lastImg) { lastImg = userImage; imgFrame = { x: 0, y: 0, zoom: 1, fit: false }; sync(); }
+            }, 400);
+
+            // Arrastrar la foto con el dedo sobre la vista previa
+            var drag = null, moved = false;
+            canvas.addEventListener('pointerdown', function(e) {
+                if (!userImage) return;
+                drag = { x: e.clientX, y: e.clientY, fx: imgFrame.x, fy: imgFrame.y };
+                moved = false;
+                try { canvas.setPointerCapture(e.pointerId); } catch (er) {}
+            });
+            canvas.addEventListener('pointermove', function(e) {
+                if (!drag) return;
+                var r = canvas.getBoundingClientRect();
+                var dx = (e.clientX - drag.x) / r.width, dy = (e.clientY - drag.y) / r.height;
+                if (Math.abs(dx) + Math.abs(dy) > 0.01) moved = true;
+                if (!moved) return;
+                var iw = userImage.naturalWidth, ih = userImage.naturalHeight;
+                var kx, ky;
+                if (imgFrame.fit) { kx = 2; ky = 2; }
+                else {
+                    // Cuánto "sobra" de la foto a cada lado: arrastrar ese tanto la lleva de un borde al otro
+                    var scale = Math.max(W / iw, H / ih) * imgFrame.zoom;
+                    var sx = (iw * scale - W) / W, sy = (ih * scale - H) / H;
+                    kx = sx > 0.001 ? -2 / sx : 0; ky = sy > 0.001 ? -2 / sy : 0;
+                }
+                imgFrame.x = clamp(drag.fx + dx * kx); imgFrame.y = clamp(drag.fy + dy * ky);
+                sync(); redraw();
+            });
+            var end = function() { drag = null; };
+            canvas.addEventListener('pointerup', end);
+            canvas.addEventListener('pointercancel', end);
+            // Si fue un arrastre, no cuenta como toque (no cambia el zoom de la vista previa)
+            canvas.addEventListener('click', function(e) { if (moved) { e.stopImmediatePropagation(); moved = false; } }, true);
         })();
     </script>
 </body>

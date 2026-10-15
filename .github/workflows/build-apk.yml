@@ -1,0 +1,80 @@
+name: Build APK Region Centro
+
+on:
+  push:
+    branches: [ "apk-region-centro" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Prepare signing key (optional secret)
+        env:
+          RC_KEYSTORE_BASE64: ${{ secrets.RC_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$RC_KEYSTORE_BASE64" ]; then
+            echo "$RC_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/rc.jks"
+            echo "RC_KEYSTORE=$RUNNER_TEMP/rc.jks" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build release APK
+        env:
+          RC_KEYSTORE_PASSWORD: ${{ secrets.RC_KEYSTORE_PASSWORD }}
+          RC_KEY_ALIAS: ${{ secrets.RC_KEY_ALIAS }}
+          RC_KEY_PASSWORD: ${{ secrets.RC_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          gradle :app:assembleRelease --console=plain 2>&1 | tee build.log
+
+      - name: Publish result to branch
+        if: always()
+        run: |
+          mkdir -p out
+          cp build.log out/ 2>/dev/null || echo "no log" > out/build.log
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk out/RegionCentro.apk
+            echo "OK run ${GITHUB_RUN_NUMBER}" > out/status.txt
+          else
+            echo "FAIL run ${GITHUB_RUN_NUMBER}" > out/status.txt
+          fi
+          cd out
+          git init -q -b ci-output
+          git config user.email "ci@regioncentro"
+          git config user.name "CI"
+          git add -A
+          git commit -q -m "CI output ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-output:apk-region-centro-ci-output
+
+      - name: Publish GitHub Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete region-centro-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create region-centro-latest out/RegionCentro.apk \
+            --title "Región Centro APK (build ${GITHUB_RUN_NUMBER})" \
+            --notes "APK de la app Región Centro (envoltorio de https://app.247hrs.net/). Descarga RegionCentro.apk e instálala en Android." \
+            --target "${GITHUB_SHA}" --prerelease
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RegionCentro-apk
+          path: out/

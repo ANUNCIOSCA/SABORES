@@ -18,11 +18,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,8 +54,28 @@ import kotlinx.coroutines.delay
 class AlarmActivity : ComponentActivity() {
     private val taskId = mutableLongStateOf(-1L)
 
+    companion object {
+        /** Desde la notificación: enviar el WhatsApp de una vez, sin mostrar pantallas. */
+        const val EXTRA_SEND = "send_whatsapp"
+    }
+
+    /** Apaga la alarma, marca el aviso como hecho y abre WhatsApp con el mensaje escrito. */
+    private fun sendNow(id: Long) {
+        val task = TaskStore.find(this, id)
+        if (task != null) {
+            AlarmActions.stopAndComplete(this, task.id, quiet = true)
+            NotificationHelper.cancelAllForTask(this, task.id)
+            WhatsApp.open(this, task.phone, task.message.ifBlank { task.title })
+        }
+        finish()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra(EXTRA_SEND, false)) {
+            sendNow(intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L))
+            return
+        }
         if (android.os.Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -75,11 +97,7 @@ class AlarmActivity : ComponentActivity() {
                         onStop = { AlarmActions.stopAndComplete(this, task.id); finish() },
                         onSnooze = { AlarmActions.snooze(this, task.id, 5); finish() },
                         onDelete = { AlarmActions.delete(this, task.id); finish() },
-                        onWhatsApp = {
-                            AlarmActions.stopAndComplete(this, task.id)
-                            WhatsApp.open(this, task.phone, task.message.ifBlank { task.title })
-                            finish()
-                        },
+                        onWhatsApp = { sendNow(task.id) },
                         onCall = {
                             AlarmActions.stopAndComplete(this, task.id)
                             PhoneCall.open(this, task.phone)
@@ -94,6 +112,10 @@ class AlarmActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_SEND, false)) {
+            sendNow(intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L))
+            return
+        }
         taskId.longValue = intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L)
     }
 }
@@ -143,18 +165,23 @@ private fun AlarmScreen(
                 }
             }
             Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onStop,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = AgendaBlueDark),
-                ) { Text("APAGAR", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
                 if (task.isWhatsApp) {
+                    // El mensaje ya está listo: lo principal es ENVIAR
                     Button(
                         onClick = onWhatsApp,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AgendaGreen, contentColor = Color.White),
-                    ) { Text("Abrir WhatsApp") }
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Send, null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("ENVIAR", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
                 }
+                Button(
+                    onClick = onStop,
+                    modifier = Modifier.fillMaxWidth().height(if (task.isWhatsApp) 52.dp else 56.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = AgendaBlueDark),
+                ) { Text("APAGAR", fontWeight = FontWeight.Bold, fontSize = if (task.isWhatsApp) 16.sp else 18.sp) }
                 // Reuniones y viajes guardados por voz traen "Lugar: ..." → abrir el mapa
                 val place = task.message.lineSequence().firstOrNull { it.startsWith("Lugar: ") }?.removePrefix("Lugar: ")?.trim()
                 if (!place.isNullOrBlank()) {

@@ -855,3 +855,64 @@ fun DraftMessageDialog(task: AgendaTask, onDismiss: () -> Unit, onSave: (String)
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }
+
+/**
+ * Al tocar un WhatsApp pendiente (o su notificación) lo primero es ENVIAR:
+ * se muestra el mensaje listo y un botón grande "Enviar". Editar queda como opción secundaria.
+ */
+@Composable
+fun SendWhatsAppDialog(
+    task: AgendaTask,
+    onDismiss: () -> Unit,
+    onSend: () -> Unit,
+    onDraft: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    val person = task.title.substringAfter("Enviar WhatsApp a ", "").trim().ifBlank { task.title }
+    val message = task.message.takeIf { it.isNotBlank() && it != task.title }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        icon = { Icon(Icons.AutoMirrored.Rounded.Chat, null, tint = AgendaGreen) },
+        title = { Text("WhatsApp para $person", textAlign = TextAlign.Center) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (task.phone.isNotBlank()) {
+                    Text(task.phone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (message != null) {
+                    Box(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(AgendaGreenSoft).padding(12.dp),
+                    ) { Text(message, color = Color(0xFF14321F)) }
+                } else {
+                    Text(
+                        "Todavía no tiene mensaje. Puedes redactarlo ahora o enviar y escribirlo en WhatsApp.",
+                        style = MaterialTheme.typography.bodySmall, color = AgendaDanger,
+                    )
+                }
+                Button(
+                    onClick = onSend,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AgendaGreen, contentColor = Color.White),
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.Send, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Enviar", fontWeight = FontWeight.Bold)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDraft, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
+                        Text(if (message == null) "Redactar" else "Redactar otro", maxLines = 1)
+                    }
+                    OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Rounded.Edit, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
+                        Text("Editar", maxLines = 1)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+    )
+}

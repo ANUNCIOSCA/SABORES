@@ -220,6 +220,7 @@ fun AgendaWaApp(
     var ideaLab by remember { mutableStateOf<String?>(null) }
     var ideaLabFromVoice by remember { mutableStateOf(false) }
     var draftTask by remember { mutableStateOf<AgendaTask?>(null) }
+    var sendTask by remember { mutableStateOf<AgendaTask?>(null) }
     var thinking by remember { mutableStateOf<String?>(null) }
     var contactChoice by remember { mutableStateOf<Pair<VoiceIntent, List<SelectedPhoneContact>>?>(null) }
     var waitingContactsPermission by remember { mutableStateOf<VoiceIntent?>(null) }
@@ -253,7 +254,8 @@ fun AgendaWaApp(
         state.reloadAll()
         state.tasks.firstOrNull { it.id == id }?.let {
             section = AppSection.AGENDA
-            taskEditor = TaskEditorRequest(task = it)
+            // WhatsApp pendiente → directo a "Enviar", no al formulario de edición
+            if (it.isWhatsApp && !it.completed) sendTask = it else taskEditor = TaskEditorRequest(task = it)
         }
         focusTaskId.value = null
     }
@@ -453,7 +455,7 @@ fun AgendaWaApp(
     }
 
     val taskActions = TaskActions(
-        onEdit = { taskEditor = TaskEditorRequest(task = it) },
+        onEdit = { if (it.isWhatsApp && !it.completed) sendTask = it else taskEditor = TaskEditorRequest(task = it) },
         onDelete = { confirmDeleteTask = it },
         onToggle = { task, done -> state.setCompleted(task, done) },
         onWhatsApp = openWhatsApp,
@@ -691,6 +693,23 @@ fun AgendaWaApp(
                     context.getSharedPreferences("agenda_wa_profile", Context.MODE_PRIVATE).edit().putBoolean("welcome_pending", false).apply()
                     showWelcome = false
                 },
+            )
+        }
+
+        sendTask?.let { task ->
+            SendWhatsAppDialog(
+                task = task,
+                onDismiss = { sendTask = null },
+                onSend = {
+                    sendTask = null
+                    if (WhatsApp.open(context, task.phone, task.message.ifBlank { task.title })) {
+                        state.setCompleted(task, true)
+                        AlarmSoundService.stop(context)
+                        NotificationHelper.cancelAllForTask(context, task.id)
+                    } else showMessage("No se pudo abrir WhatsApp.")
+                },
+                onDraft = { sendTask = null; draftTask = task },
+                onEdit = { sendTask = null; taskEditor = TaskEditorRequest(task = task) },
             )
         }
 

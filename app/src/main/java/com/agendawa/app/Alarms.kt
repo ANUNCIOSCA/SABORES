@@ -227,12 +227,16 @@ object NotificationHelper {
 
     private fun whatsappAction(context: Context, task: AgendaTask, builder: NotificationCompat.Builder) {
         if (!task.isWhatsApp) return
-        val text = task.message.ifBlank { task.title }
+        // Pasa por AlarmActivity: apaga la alarma, marca el aviso como hecho y abre WhatsApp con el mensaje listo
         val pi = PendingIntent.getActivity(
-            context, task.id.hashCode() * 10 + 7, WhatsApp.intent(task.phone, text),
+            context, task.id.hashCode() * 10 + 7,
+            Intent(context, AlarmActivity::class.java)
+                .putExtra(ReminderScheduler.EXTRA_TASK_ID, task.id)
+                .putExtra(AlarmActivity.EXTRA_SEND, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        builder.addAction(0, "Abrir WhatsApp", pi)
+        builder.addAction(0, "Enviar", pi)
     }
 
     private fun callAction(context: Context, task: AgendaTask, builder: NotificationCompat.Builder) {
@@ -501,11 +505,11 @@ object AlarmActions {
         cancelNotification(context, taskId)
     }
 
-    fun stopAndComplete(context: Context, taskId: Long) {
+    fun stopAndComplete(context: Context, taskId: Long, quiet: Boolean = false) {
         val tasks = TaskStore.load(context)
         TaskStore.save(context, tasks.map { if (it.id == taskId) it.copy(completed = true) else it })
         stopCurrentAlarm(context, taskId)
-        toast(context, "Alarma apagada")
+        if (!quiet) toast(context, "Alarma apagada")
     }
 
     fun snooze(context: Context, taskId: Long, minutes: Long = 5) {

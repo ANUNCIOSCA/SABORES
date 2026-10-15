@@ -38,7 +38,7 @@ fun money(amount: Double, symbol: String = "$"): String {
 object BackupManager {
     private const val FORMAT = "agenda-wa-backup"
     private const val SCHEMA_VERSION = 4
-    const val APP_VERSION = "2.2.2"
+    const val APP_VERSION = "2.2.3"
 
     fun exportJson(context: Context): String {
         val root = JSONObject()

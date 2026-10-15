@@ -168,9 +168,19 @@ private fun AlarmScreen(
                 Text(headline.replaceFirstChar { it.uppercase() }, color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))
                 Text(task.title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                if (task.eventMillis > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Es a las ${formatDate(task.eventMillis, "h:mm a")}", color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
                 if (task.message.isNotBlank() && task.message != task.title) {
                     Spacer(Modifier.height(10.dp))
                     Text(task.message, color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Center, maxLines = 8)
+                }
+                val topics = task.topicList
+                if (topics.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text("Temas a tratar", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(topics.take(8).joinToString("\n") { "• $it" }, color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Start)
                 }
             }
             Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

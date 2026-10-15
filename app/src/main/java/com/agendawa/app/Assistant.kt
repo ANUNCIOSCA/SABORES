@@ -38,13 +38,58 @@ data class VoiceIntent(
     /** WhatsApp para un grupo: su nombre como se dijo ("ventas", "familia"). Vacío = a una persona. */
     val groupName: String = "",
     val toGroup: Boolean = false,
+    /** Temas a tratar ("los temas a tratar son: presupuesto, entrega..."). */
+    val topics: List<String> = emptyList(),
 ) {
-    /** Texto de detalles que se guarda en el recordatorio. */
+    /** Texto de detalles que se guarda en el recordatorio (la hora va aparte, para poder editarla). */
     fun details(): String = buildList {
-        if (eventMillis > 0) add("Hora: " + formatDate(eventMillis, "EEEE d 'de' MMMM, h:mm a").replaceFirstChar { it.uppercase() })
         if (location.isNotBlank()) add("Lugar: $location")
         if (message.isNotBlank()) add(message)
     }.joinToString("\n")
+
+    /** Minutos entre el aviso y la reunión (0 si no hay evento aparte). */
+    val leadMinutes: Int get() = if (eventMillis > 0) ((eventMillis - dateTimeMillis) / 60_000L).toInt().coerceAtLeast(0) else 0
+    val topicsText: String get() = topics.joinToString("\n")
+}
+
+/**
+ * Temas a tratar dichos por voz: "los temas a tratar son: el presupuesto, la entrega y el pago",
+ * "puntos: uno..., dos...", o en reuniones "para hablar de...".
+ */
+object TopicParser {
+    private val start = Regex(
+        "(?i)[,.;]?\\s*(?:y\\s+)?(?:(?:los|las|el|la)\\s+)?(?:temas?|puntos?|asuntos?)" +
+            "(?:\\s+(?:a|que\\s+(?:vamos\\s+a|hay\\s+que|debo|quiero))\\s+(?:tratar|hablar|ver|revisar|conversar))?" +
+            "\\s*(?:son|serían|serian|es|será|sera|:)\\s*:?\\s*",
+    )
+    private val talk = Regex("(?i)\\s+para\\s+(?:hablar|tratar|conversar|ver|revisar|discutir)\\s+(?:de\\s+|sobre\\s+)?")
+    private val separators = Regex(
+        "(?i)\\s*(?:[,;\\n•]|\\bpunto\\s+(?:uno|dos|tres|cuatro|cinco|seis|\\d+)\\b|\\b(?:primero|segundo|tercero|cuarto|quinto|luego|después|despues|también|tambien|además|ademas)\\b|\\s+y\\s+)\\s*",
+    )
+
+    fun items(s: String): List<String> = s.split(separators)
+        .map { it.trim(' ', '.', ':', '-') }
+        .filter { it.length > 1 }
+        .map { it.replaceFirstChar { c -> c.uppercase() } }
+        .take(10)
+
+    /** Separa la frase en (lo demás, temas). */
+    fun split(text: String, meeting: Boolean): Pair<String, List<String>> {
+        start.find(text)?.let { m ->
+            val list = items(text.substring(m.range.last + 1))
+            if (list.isNotEmpty()) return text.substring(0, m.range.first).trim() to list
+        }
+        if (meeting) talk.find(text)?.let { m ->
+            // "reunión con Carlos mañana a las 3 para hablar del presupuesto y la entrega"
+            val rest = text.substring(m.range.last + 1)
+            val cut = Regex("(?i)\\s+(?:a\\s+las?\\s+\\d|mañana|hoy|pasado|el\\s+(?:lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo))").find(rest)
+            val topicsPart = if (cut != null) rest.substring(0, cut.range.first) else rest
+            val tail = if (cut != null) rest.substring(cut.range.first) else ""
+            val list = items(topicsPart.removePrefix("el ").removePrefix("la "))
+            if (list.isNotEmpty()) return (text.substring(0, m.range.first) + " " + tail).trim() to list
+        }
+        return text to emptyList()
+    }
 }
 
 /** Añade la repetición dicha en [phrase] (si la hay). Ideas y notas no se repiten. */
@@ -92,7 +137,16 @@ object LocalIntentParser {
 
     fun parse(text: String): VoiceIntent = parseOnce(text).withRepeat(text)
 
+    /** Primero se separan los temas a tratar, para que no se confundan con el lugar o el mensaje. */
     private fun parseOnce(text: String): VoiceIntent {
+        val first = parseCore(text)
+        if (first.kind == VoiceIntentKind.IDEA || first.kind == VoiceIntentKind.NOTE || first.kind == VoiceIntentKind.WHATSAPP) return first
+        val (core, topics) = TopicParser.split(text, first.kind == VoiceIntentKind.MEETING)
+        if (topics.isEmpty()) return first
+        return parseCore(core.ifBlank { text }).copy(topics = topics)
+    }
+
+    private fun parseCore(text: String): VoiceIntent {
         val norm = SmartNoteOrganizer.normalize(text)
         val base = VoiceParser.parse(text)
         val kind = when {
@@ -229,6 +283,9 @@ object AiAssistant {
             - "grupo": SOLO si el whatsapp es para un GRUPO ("mándale al grupo de ventas...", "escribe en el grupo de la
               familia..."): el nombre del grupo sin "grupo de" ("Ventas", "Familia"). Entonces "persona" va vacío y el
               "mensaje" va dirigido a todos ("Buenos días a todos, ..."). Vacío si es para una persona.
+            - "temas": en reunión o llamada, la lista de temas o puntos a tratar que dijo ("los temas a tratar son…",
+              "para hablar de…"), cada uno corto y claro, por ejemplo ["Presupuesto 2025", "Fecha de entrega"]. Lista vacía si no dijo.
+              No repitas los temas dentro de "mensaje".
             - "repetir": SOLO si dijo que se repite. Copia sus palabras de días, horas y hasta cuándo, por ejemplo
               "lunes a las 8, martes a las 10 y miércoles a las 8", "de lunes a viernes a las 7", "todos los días a las 9
               hasta el 30 de noviembre", "todos los sábados a las 10". Usa los nombres de los días. Vacío si es una sola vez.
@@ -260,6 +317,7 @@ object AiAssistant {
                 message = o.optString("mensaje").trim(),
                 location = o.optString("lugar").trim(),
                 groupName = o.optString("grupo").trim(),
+                topics = o.optJSONArray("temas")?.let { a -> (0 until a.length()).map { a.optString(it).trim() }.filter { it.isNotBlank() } }.orEmpty(),
                 toGroup = kind == VoiceIntentKind.WHATSAPP && o.optString("grupo").isNotBlank(),
                 dateTimeMillis = (event - lead * 60_000).coerceAtLeast(minFuture),
                 eventMillis = if (isEvent || lead > 0) event else 0L,

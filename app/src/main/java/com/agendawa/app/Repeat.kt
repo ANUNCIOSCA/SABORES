@@ -77,7 +77,7 @@ object Repeat {
         // Si lo hace antes de la hora (o lo había pospuesto), cuenta como la vez actual
         val from = maxOf(now, task.dateTimeMillis)
         val nextAt = next(rule, from) ?: return task.copy(completed = true)
-        return task.copy(dateTimeMillis = nextAt, completed = false)
+        return task.copy(dateTimeMillis = nextAt, completed = false, eventMillis = eventFor(task, nextAt))
     }
 
     /** Un aviso que se repite y quedó atrasado (no lo atendió) salta a la próxima fecha sin perder la repetición. */
@@ -85,8 +85,11 @@ object Repeat {
         val rule = task.repeat ?: return task
         if (task.completed || task.dateTimeMillis > now - MISSED_AFTER_MS) return task
         val nextAt = next(rule, now) ?: return task.copy(completed = true)
-        return task.copy(dateTimeMillis = nextAt)
+        return task.copy(dateTimeMillis = nextAt, eventMillis = eventFor(task, nextAt))
     }
+
+    /** La reunión va [AgendaTask.leadMinutes] después del aviso. */
+    private fun eventFor(task: AgendaTask, alarmAt: Long): Long = if (task.eventMillis > 0) alarmAt + task.leadMinutes * 60_000L else 0L
 
     /** Pasada una hora sin atenderlo, se da por perdido y se programa el siguiente. */
     const val MISSED_AFTER_MS = 60 * 60_000L

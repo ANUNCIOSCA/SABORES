@@ -303,27 +303,54 @@ fun toast(context: Context, text: String) = Toast.makeText(context, text, Toast.
 @Composable
 fun rememberSpeechInput(prompt: String, onCancel: () -> Unit = {}, onText: (String) -> Unit): () -> Unit {
     val context = LocalContext.current
+    // 1er intento: español del teléfono (o latino); si el dictado falla, se reintenta solo con español de España
+    val attempt = remember { intArrayOf(0) }
+    val languages = remember {
+        val device = java.util.Locale.getDefault()
+        listOf(if (device.language == "es") device.toLanguageTag() else "es-419", "es-ES")
+    }
+    fun intentFor(lang: String) = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
+        putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        // Más tiempo de silencio: no se corta mientras piensas
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3500L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2000L)
+    }
+    lateinit var launch: (Int) -> Unit
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val text = if (result.resultCode == Activity.RESULT_OK)
             result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() else null
-        if (!text.isNullOrBlank()) onText(text) else onCancel()
-    }
-    return remember(prompt) {
-        {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-VE")
-                putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+        when {
+            !text.isNullOrBlank() -> onText(text)
+            // Error del dictado (no el usuario cerrando): se reintenta una vez con otro español
+            result.resultCode != Activity.RESULT_CANCELED && result.resultCode != Activity.RESULT_OK && attempt[0] == 0 -> {
+                attempt[0] = 1
+                launch(1)
             }
-            try {
-                launcher.launch(intent)
-            } catch (e: ActivityNotFoundException) {
-                toast(context, "Este teléfono no tiene reconocimiento de voz disponible.")
+            else -> {
+                val why = when (result.resultCode) {
+                    RecognizerIntent.RESULT_NETWORK_ERROR -> "No hay conexión para el dictado."
+                    RecognizerIntent.RESULT_AUDIO_ERROR -> "No pude usar el micrófono."
+                    RecognizerIntent.RESULT_NO_MATCH, Activity.RESULT_OK -> "No te entendí."
+                    RecognizerIntent.RESULT_SERVER_ERROR, RecognizerIntent.RESULT_CLIENT_ERROR -> "El dictado del teléfono falló."
+                    else -> "No te escuché."
+                }
+                toast(context, "$why Toca el micrófono para intentarlo otra vez.")
                 onCancel()
             }
         }
     }
+    launch = { i ->
+        try {
+            launcher.launch(intentFor(languages[i.coerceIn(0, languages.lastIndex)]))
+        } catch (e: ActivityNotFoundException) {
+            toast(context, "Este teléfono no tiene dictado por voz. Instala o activa la app de Google.")
+            onCancel()
+        }
+    }
+    return remember(prompt) { { attempt[0] = 0; launch(0) } }
 }

@@ -47,6 +47,8 @@ object TaskStore {
         put("isWhatsApp", t.isWhatsApp)
         put("completed", t.completed)
         t.repeat?.let { put("repeat", Repeat.toJson(it)) }
+        if (t.eventMillis > 0) { put("eventMillis", t.eventMillis); put("leadMinutes", t.leadMinutes) }
+        if (t.topics.isNotBlank()) put("topics", t.topics)
         if (t.toGroup) {
             put("toGroup", true)
             put("groups", JSONArray().apply { t.groups.forEach { put(GroupStore.toJson(it)) } })
@@ -63,6 +65,9 @@ object TaskStore {
         completed = o.optBoolean("completed"),
         repeat = Repeat.fromJson(o.optJSONObject("repeat")),
         toGroup = o.optBoolean("toGroup"),
+        eventMillis = o.optLong("eventMillis", 0L),
+        leadMinutes = o.optInt("leadMinutes", 0),
+        topics = o.optString("topics"),
         groups = o.optJSONArray("groups")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.let(GroupStore::fromJson) } }.orEmpty(),
     )
 

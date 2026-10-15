@@ -68,7 +68,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -204,6 +206,15 @@ fun AgendaWaApp(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val showMessage: (String) -> Unit = { msg -> scope.launch { snackbar.currentSnackbarData?.dismiss(); snackbar.showSnackbar(msg) } }
+    /** Aviso con un botón (por ejemplo "Editar" después de guardar por voz). */
+    val showMessageAction: (String, String, () -> Unit) -> Unit = { msg, label, action ->
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            if (snackbar.showSnackbar(msg, actionLabel = label, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) action()
+        }
+    }
+    /** Último aviso creado por voz, para ofrecer "Editar" al terminar. */
+    var lastVoiceTaskId by remember { mutableStateOf(0L) }
 
     var section by remember { mutableStateOf(AppSection.AGENDA) }
     var tab by remember { mutableIntStateOf(0) }
@@ -310,7 +321,11 @@ fun AgendaWaApp(
 
     /** Recordatorios, reuniones y viajes: se guardan de una vez. */
     val saveReminder: (VoiceIntent) -> Unit = { vi ->
-        val (_, result) = state.createTask(vi.title, vi.details(), "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), false, vi.repeat)
+        val (created, result) = state.createTask(
+            vi.title, vi.details(), "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), false, vi.repeat,
+            eventMillis = vi.eventMillis, leadMinutes = vi.leadMinutes, topics = vi.topicsText,
+        )
+        lastVoiceTaskId = created.id
         // En reuniones y viajes se dice la hora del evento, no la del aviso previo
         val lead = if (vi.eventMillis > 0) ((vi.eventMillis - vi.dateTimeMillis) / 60_000).toInt() else 0
         val whenText = vi.repeat?.let { r -> Repeat.spoken(r.copy(minutes = r.minutes + lead, dayMinutes = r.dayMinutes.mapValues { it.value + lead })) }
@@ -319,7 +334,7 @@ fun AgendaWaApp(
             VoiceIntentKind.MEETING -> "${vi.title}, $whenText. Te aviso antes"
             VoiceIntentKind.TRAVEL -> "${vi.title}, $whenText. Te aviso con tiempo"
             else -> "${vi.title}, $whenText"
-        }
+        } + if (vi.topics.isNotEmpty()) ". Anoté ${vi.topics.size} tema${if (vi.topics.size == 1) "" else "s"} a tratar" else ""
         finishVoice(what + if (result == ScheduleResult.APPROXIMATE) " (activa las alarmas exactas)" else "")
     }
 
@@ -349,7 +364,7 @@ fun AgendaWaApp(
                 }.also { thinking = null }
             } else said.replaceFirstChar { it.uppercase() }
             val title = "Enviar WhatsApp a ${contact.displayName}"
-            state.createTask(title, msg, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true, vi.repeat)
+            lastVoiceTaskId = state.createTask(title, msg, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true, vi.repeat).first.id
             finishVoice("WhatsApp para ${contact.displayName} listo, ${whenOf(vi)}")
         }
     }
@@ -362,7 +377,9 @@ fun AgendaWaApp(
             else -> "Llamar a ${contact.displayName}"
         }
         when {
-            contact == null -> openEditorFromVoice(ReminderDraft(title, vi.message, vi.dateTimeMillis, isWa, repeat = vi.repeat))
+            contact == null -> openEditorFromVoice(
+                ReminderDraft(title, vi.message, vi.dateTimeMillis, isWa, repeat = vi.repeat, eventMillis = vi.eventMillis, leadMinutes = vi.leadMinutes, topics = vi.topicsText),
+            )
             // WhatsApp sin mensaje: se pregunta por voz qué escribirle
             isWa && vi.message.isBlank() -> {
                 askingMessage = vi to contact
@@ -370,7 +387,11 @@ fun AgendaWaApp(
                 askMessageByVoice()
             }
             else -> {
-                val (_, result) = state.createTask(title, vi.message, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), isWa, vi.repeat)
+                val (created, result) = state.createTask(
+                    title, vi.message, contact.phoneNumber, vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), isWa, vi.repeat,
+                    topics = if (isWa) "" else vi.topicsText,
+                )
+                lastVoiceTaskId = created.id
                 val whenText = whenOf(vi)
                 finishVoice(
                     (if (isWa) "WhatsApp para ${contact.displayName} listo, $whenText" else "Llamar a ${contact.displayName}, $whenText") +
@@ -420,7 +441,8 @@ fun AgendaWaApp(
         if (msg.isBlank()) {
             openEditorFromVoice(ReminderDraft(title, "", vi.dateTimeMillis, true, repeat = vi.repeat, toGroup = true, groups = groups))
         } else {
-            val (_, result) = state.createTask(title, msg, "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true, vi.repeat, groups)
+            val (created, result) = state.createTask(title, msg, "", vi.dateTimeMillis.coerceAtLeast(System.currentTimeMillis() + 60_000), true, vi.repeat, groups)
+            lastVoiceTaskId = created.id
             finishVoice(
                 "Mensaje para el grupo ${groupName.ifBlank { "que elijas" }} listo, ${whenOf(vi)}" +
                     (if (fav == null && groupName.isNotBlank()) ". Guárdalo en tus grupos para abrirlo directo" else "") +
@@ -461,7 +483,12 @@ fun AgendaWaApp(
         } else if (voiceDone.isNotEmpty()) {
             val summary = voiceDone.joinToString(". ")
             voiceDone.clear()
-            showMessage(summary)
+            // Con botón "Editar" para corregir al momento la hora o los datos del último aviso
+            val editId = lastVoiceTaskId
+            lastVoiceTaskId = 0L
+            val editTask = state.tasks.firstOrNull { it.id == editId }
+            if (editTask != null) showMessageAction(summary, "Editar") { taskEditor = TaskEditorRequest(task = state.tasks.firstOrNull { it.id == editId } ?: editTask) }
+            else showMessage(summary)
             if (VoicePrefs.speakBack(context)) speaker.say(withName(context, "Listo") + " $summary")
         }
     }

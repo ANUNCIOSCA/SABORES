@@ -18,7 +18,17 @@ data class AgendaTask(
     val toGroup: Boolean = false,
     /** Grupos elegidos. Vacío con [toGroup] = se elige el grupo al enviar. */
     val groups: List<WaGroup> = emptyList(),
-)
+    /** Hora real del evento (reunión, cita, viaje) cuando el aviso suena antes. 0 = la misma del aviso. */
+    val eventMillis: Long = 0L,
+    /** Cuántos minutos antes del evento suena el aviso. */
+    val leadMinutes: Int = 0,
+    /** Temas a tratar (uno por línea). */
+    val topics: String = "",
+) {
+    /** Cuándo es de verdad (la reunión), aunque el aviso suene antes. */
+    val whenMillis: Long get() = if (eventMillis > 0) eventMillis else dateTimeMillis
+    val topicList: List<String> get() = topics.lines().map { it.trim().trimStart('•', '-', '*').trim() }.filter { it.isNotBlank() }
+}
 
 /** Grupo de WhatsApp guardado. [link] = enlace de invitación (chat.whatsapp.com/…), opcional. */
 data class WaGroup(val name: String, val link: String = "")
@@ -34,6 +44,9 @@ data class ReminderDraft(
     val repeat: RepeatRule? = null,
     val toGroup: Boolean = false,
     val groups: List<WaGroup> = emptyList(),
+    val eventMillis: Long = 0L,
+    val leadMinutes: Int = 0,
+    val topics: String = "",
 )
 
 enum class ScheduleResult { EXACT, APPROXIMATE, SKIPPED }

@@ -297,7 +297,10 @@ object NotificationHelper {
 
     private fun contentText(task: AgendaTask): String = buildString {
         append(task.title)
+        if (task.eventMillis > 0) append("\nHora: ").append(formatDate(task.eventMillis, "EEE d MMM, h:mm a"))
         if (task.message.isNotBlank() && task.message != task.title) append("\n\n").append(task.message)
+        val topics = task.topicList
+        if (topics.isNotEmpty()) append("\n\nTemas a tratar:\n").append(topics.joinToString("\n") { "• $it" })
     }
 
     private fun whatsappAction(context: Context, task: AgendaTask, builder: NotificationCompat.Builder) {

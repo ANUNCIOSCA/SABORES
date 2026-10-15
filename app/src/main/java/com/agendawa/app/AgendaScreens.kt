@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -335,6 +337,11 @@ fun TaskCard(task: AgendaTask, actions: TaskActions, showDate: Boolean = false) 
                 } else if (task.isWhatsApp && !task.completed) {
                     Text("Sin mensaje todavía", style = MaterialTheme.typography.bodySmall, color = AgendaDanger)
                 }
+                // Temas a tratar de la reunión o llamada
+                task.topicList.takeIf { it.isNotEmpty() }?.let { list ->
+                    list.take(4).forEach { t -> Text("• $t", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    if (list.size > 4) Text("y ${list.size - 4} más…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (task.isWhatsApp && !task.completed && actions.onDraft != null) {
                     TextButton(onClick = { actions.onDraft?.invoke(task) }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)) {
                         Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(16.dp))
@@ -346,8 +353,11 @@ fun TaskCard(task: AgendaTask, actions: TaskActions, showDate: Boolean = false) 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.AccessTime, null, modifier = Modifier.size(14.dp), tint = if (overdue) AgendaDanger else MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(4.dp))
+                    // La hora de la reunión; si el aviso suena antes, también se ve a qué hora
+                    val shown = task.whenMillis
                     Text(
-                        if (showDate || !isSameDay(task.dateTimeMillis, now)) formatDate(task.dateTimeMillis, "EEE d MMM · $TIME_PATTERN") else formatDate(task.dateTimeMillis, TIME_PATTERN),
+                        (if (showDate || !isSameDay(shown, now)) formatDate(shown, "EEE d MMM · $TIME_PATTERN") else formatDate(shown, TIME_PATTERN)) +
+                            if (task.eventMillis > 0 && task.dateTimeMillis != task.eventMillis) " · aviso ${formatDate(task.dateTimeMillis, TIME_PATTERN)}" else "",
                         style = MaterialTheme.typography.labelMedium,
                         color = if (overdue) AgendaDanger else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -630,7 +640,20 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
     var message by remember { mutableStateOf(existing?.message ?: draft?.message ?: "") }
     var phone by remember { mutableStateOf(existing?.phone ?: draft?.phone ?: "") }
     var isWhatsApp by remember { mutableStateOf(existing?.isWhatsApp ?: draft?.isWhatsApp ?: request.whatsApp) }
-    var dateTime by remember { mutableLongStateOf(existing?.dateTimeMillis ?: draft?.dateTimeMillis ?: defaultTime) }
+    // dateTime = cuándo es (la reunión); el aviso suena [lead] minutos antes
+    var dateTime by remember {
+        mutableLongStateOf(
+            existing?.whenMillis ?: draft?.let { if (it.eventMillis > 0) it.eventMillis else it.dateTimeMillis } ?: defaultTime,
+        )
+    }
+    val initialLead = existing?.let { if (it.eventMillis > 0) it.leadMinutes else 0 } ?: draft?.let { if (it.eventMillis > 0) it.leadMinutes else 0 } ?: 0
+    var lead by remember { mutableIntStateOf(initialLead) }
+    var topics by remember { mutableStateOf(existing?.topics ?: draft?.topics ?: "") }
+    var showTopics by remember { mutableStateOf(topics.isNotBlank()) }
+    val dictateTopics = rememberSpeechInput("Dime los temas a tratar") { text ->
+        val items = TopicParser.items(text)
+        topics = (topics.lines().filter { it.isNotBlank() } + items.map { "• $it" }).joinToString("\n")
+    }
     var contactName by remember { mutableStateOf(draft?.contactName) }
     var error by remember { mutableStateOf<String?>(null) }
     // WhatsApp a un grupo (o varios) en vez de a un contacto
@@ -662,7 +685,8 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
         mutableStateOf(initialRule?.days ?: (1 shl (Calendar.getInstance().apply { timeInMillis = dateTime }.get(Calendar.DAY_OF_WEEK) + 5) % 7))
     }
     var perDayTime by remember { mutableStateOf(initialRule?.dayMinutes?.isNotEmpty() == true) }
-    var dayMinutes by remember { mutableStateOf(initialRule?.dayMinutes ?: emptyMap()) }
+    // Las horas por día guardadas son las del aviso: se muestran como las del evento
+    var dayMinutes by remember { mutableStateOf(initialRule?.dayMinutes?.mapValues { it.value + initialLead } ?: emptyMap()) }
     var repeatUntil by remember { mutableLongStateOf(initialRule?.until ?: 0L) }
     val repeatDays = when (repeatMode) { 1 -> Repeat.ALL; 2 -> Repeat.WEEKDAYS; 3 -> customDays; else -> 0 }
     val aiEnabled = remember { AiSettings.isEnabled(context) }
@@ -810,6 +834,30 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                         }.timeInMillis
                     }
                 }
+                if (!isWhatsApp) {
+                    Text("Avisarme", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(0 to "A la hora", 15 to "15 min antes", 30 to "30 min antes", 60 to "1 h antes", 120 to "2 h antes", 1440 to "1 día antes").forEach { (m, l) ->
+                            FilterChip(selected = lead == m, onClick = { lead = m }, label = { Text(l, maxLines = 1) })
+                        }
+                    }
+                    if (lead > 0) Text(
+                        "Sonará ${formatDate(dateTime - lead * 60_000L, "EEE d MMM · $TIME_PATTERN")}",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                    )
+                    if (showTopics) {
+                        OutlinedTextField(
+                            value = topics,
+                            onValueChange = { topics = it.take(3000) },
+                            label = { Text("Temas a tratar (uno por línea)") },
+                            placeholder = { Text("• Presupuesto\n• Fecha de entrega") },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                            trailingIcon = { IconButton(onClick = dictateTopics) { Icon(Icons.Rounded.Mic, "Dictar temas") } },
+                        )
+                    } else {
+                        TextButton(onClick = { showTopics = true }) { Text("+ Temas a tratar") }
+                    }
+                }
                 RepeatSection(
                     mode = repeatMode,
                     onMode = { repeatMode = it; error = null },
@@ -828,15 +876,29 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
         },
         confirmButton = {
             Button(onClick = {
+                val leadUsed = if (isWhatsApp) 0 else lead
                 val base = Repeat.minutesOf(dateTime)
-                val rule = if (repeatMode == 0 || repeatDays == 0) null else RepeatRule(
-                    days = repeatDays,
-                    minutes = base,
-                    dayMinutes = if (perDayTime) (0..6).filter { (repeatDays and (1 shl it)) != 0 }.associateWith { dayMinutes[it] ?: base } else emptyMap(),
-                    until = repeatUntil,
+                // La regla guarda la hora del aviso (la del evento menos el aviso previo)
+                val rule = if (repeatMode == 0 || repeatDays == 0) null else RepeatParser.resolve(
+                    RepeatRule(
+                        days = repeatDays,
+                        minutes = base,
+                        dayMinutes = if (perDayTime) (0..6).filter { (repeatDays and (1 shl it)) != 0 }.associateWith { dayMinutes[it] ?: base } else emptyMap(),
+                        until = repeatUntil,
+                    ),
+                    dateTime, leadUsed,
                 )
                 // Si se repite, la primera vez es la próxima fecha válida desde el día elegido
-                val firstAt = rule?.let { Repeat.next(it, maxOf(System.currentTimeMillis(), startOfDay(dateTime) - 1)) }
+                val firstAt = rule?.let { Repeat.next(it, maxOf(System.currentTimeMillis(), startOfDay(dateTime - leadUsed * 60_000L) - 1)) }
+                // Sin repetir: el aviso suena [leadUsed] minutos antes (si eso ya pasó, en un minuto)
+                val alarmAt = firstAt ?: (dateTime - leadUsed * 60_000L).let { a ->
+                    if (a <= System.currentTimeMillis() && dateTime > System.currentTimeMillis()) System.currentTimeMillis() + 60_000L else a
+                }
+                val eventAt = when {
+                    leadUsed == 0 -> 0L
+                    firstAt != null -> firstAt + leadUsed * 60_000L
+                    else -> dateTime
+                }
                 val finalTitle = title.trim().ifBlank {
                     if (isWhatsApp && message.isNotBlank()) "Enviar WhatsApp" else ""
                 }
@@ -850,7 +912,10 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
                             id = existing?.id ?: 0L,
                             title = finalTitle,
                             message = message.trim(),
-                            dateTimeMillis = firstAt ?: dateTime,
+                            dateTimeMillis = alarmAt,
+                            eventMillis = eventAt,
+                            leadMinutes = if (eventAt > 0) leadUsed else 0,
+                            topics = if (isWhatsApp) "" else topics.lines().map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n"),
                             isWhatsApp = isWhatsApp,
                             completed = if (firstAt != null || (existing != null && dateTime > System.currentTimeMillis())) false else (existing?.completed ?: false),
                             repeat = rule,

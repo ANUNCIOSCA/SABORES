@@ -1045,7 +1045,6 @@ private fun GroupPicker(
 ) {
     var adding by remember { mutableStateOf(false) }
     var managing by remember { mutableStateOf(false) }
-    val direct = GroupAutomation.isEnabled(LocalContext.current)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("¿A qué grupo(s)?", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         if (favorites.isEmpty()) {
@@ -1086,21 +1085,11 @@ private fun GroupPicker(
         Text(
             when {
                 selected.isEmpty() -> "A la hora se abre WhatsApp con el mensaje listo y eliges el grupo."
-                direct && selected.size == 1 && WhatsApp.isGroupLink(selected.first().link) ->
-                    "A la hora se abre \"${selected.first().name}\" con el mensaje escrito: solo tocas enviar."
-                direct -> "A la hora se abre WhatsApp con el mensaje y ${if (selected.size == 1) "el grupo" else "los grupos"} ya marcado${if (selected.size == 1) "" else "s"}: solo tocas enviar. " +
-                    "El nombre debe ser igual al del grupo en WhatsApp."
-                selected.size == 1 -> "A la hora se abre el menú Compartir: tocas \"${selected.first().name}\" arriba y envías. " +
-                    "(Opcional: activa \"Envío directo a grupos\" en Configurar alarmas y la app lo envía sola.)"
+                selected.size == 1 -> "A la hora: " + WhatsApp.groupHint(selected).replaceFirstChar { it.lowercase() }
                 else -> "A la hora puedes enviarlo a todos de una vez (los marcas en WhatsApp) o abrirlos uno por uno."
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
         )
-    }
-    if (!direct && selected.isNotEmpty()) {
-        var setup by remember { mutableStateOf(false) }
-        TextButton(onClick = { setup = true }) { Text("Activar envío directo al grupo (1 minuto)") }
-        if (setup) GroupSetupDialog(onDismiss = { setup = false })
     }
     if (adding) AddGroupDialog(onDismiss = { adding = false }, onSave = { onAdd(it); adding = false })
 }
@@ -1284,17 +1273,8 @@ fun SendWhatsAppDialog(
                         style = MaterialTheme.typography.bodySmall, color = AgendaDanger,
                     )
                 }
-                if (task.toGroup && task.groups.isNotEmpty() && !GroupAutomation.isEnabled(LocalContext.current)) {
-                    val ctx = LocalContext.current
-                    Text(
-                        if (task.groups.size == 1) "Se abre el menú Compartir: toca \"${task.groups.first().name}\" arriba y envía. " +
-                            "(Opcional: con \"Envío directo a grupos\" activado, la app lo envía sola.)"
-                        else "Se abre WhatsApp con el mensaje: marca los grupos y envía.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    var setup by remember { mutableStateOf(false) }
-                    TextButton(onClick = { setup = true }) { Text("Activar envío directo (1 minuto)") }
-                    if (setup) GroupSetupDialog(onDismiss = { setup = false })
+                if (task.toGroup && task.groups.isNotEmpty()) {
+                    Text(WhatsApp.groupHint(task.groups), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (several) {
                     Text("Envíalo a todos de una vez (los marcas en WhatsApp) o grupo por grupo; el mensaje va ya escrito:", style = MaterialTheme.typography.bodySmall)
@@ -1320,9 +1300,8 @@ fun SendWhatsAppDialog(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         when {
-                            task.toGroup && task.groups.isNotEmpty() && GroupAutomation.isEnabled(LocalContext.current) ->
-                                "Enviar a " + task.groups.joinToString(", ") { it.name }
                             several -> "Enviar a todos (los marcas en WhatsApp)"
+                            task.toGroup && task.groups.isNotEmpty() -> "Enviar a " + task.groups.first().name
                             task.toGroup && task.groups.isEmpty() -> "Enviar (eliges el grupo)"
                             else -> "Enviar"
                         },

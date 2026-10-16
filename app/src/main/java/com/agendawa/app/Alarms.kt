@@ -94,30 +94,45 @@ object WhatsApp {
         }.getOrDefault(false)
     }
 
-    /** Mensaje para un grupo: se abre WhatsApp con el texto armado y se toca el grupo para enviarlo. */
-    fun openGroup(context: Context, group: WaGroup, text: String): Boolean {
-        // Con el permiso de accesibilidad se abre el grupo con el texto escrito (o queda marcado en la lista)
-        if (GroupAutomation.send(context, listOf(group), text)) return true
-        return shareToChat(context, text, group.name)
+    /** Qué pasa al enviar a estos grupos (para mostrarlo antes de confirmar). */
+    fun groupHint(groups: List<WaGroup>): String {
+        val single = groups.singleOrNull()
+        return when {
+            single != null && isGroupLink(single.link) ->
+                "Se abre \"${single.name}\" directo y el mensaje va copiado: mantén presionado el campo de texto › Pegar › enviar."
+            single != null ->
+                "Se abre WhatsApp con el mensaje: busca \"${single.name}\" y envía. Guarda el enlace del grupo para que se abra directo."
+            groups.isEmpty() -> "Se abre WhatsApp con el mensaje: eliges el grupo y envías."
+            else -> "Se abre WhatsApp con el mensaje: marca los grupos y envía."
+        }
     }
 
     /**
-     * Sin permisos: abre el menú Compartir de Android. Arriba salen los chats y grupos que más usas
-     * en WhatsApp: al tocar el grupo se abre con el mensaje escrito y solo falta enviar.
+     * Grupo con enlace de invitación: se abre el grupo directo (sin buscarlo) y el mensaje queda copiado
+     * para pegarlo. WhatsApp no deja escribir el texto en un grupo por enlace.
+     * Sin enlace: WhatsApp se abre con el mensaje escrito y se elige el grupo.
      */
-    fun shareToChat(context: Context, text: String, groupName: String): Boolean {
-        val send = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, text)
+    fun openGroup(context: Context, group: WaGroup, text: String): Boolean {
+        if (isGroupLink(group.link)) {
+            runCatching {
+                context.getSystemService(android.content.ClipboardManager::class.java)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("Mensaje para ${group.name}", text))
+            }
+            val uri = Uri.parse(group.link.trim())
+            for (pkg in PACKAGES + listOf<String?>(null)) {
+                val ok = runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { if (pkg != null) setPackage(pkg) }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    true
+                }.getOrDefault(false)
+                if (ok) {
+                    Toast.makeText(context, "Mensaje copiado: mantén presionado el campo de texto › Pegar › enviar", Toast.LENGTH_LONG).show()
+                    return true
+                }
+            }
         }
-        val ok = runCatching {
-            context.startActivity(
-                Intent.createChooser(send, "Toca \"$groupName\" arriba y envía").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-            true
-        }.getOrDefault(false)
-        if (ok) Toast.makeText(context, "Toca \"$groupName\" arriba. Si no sale: WhatsApp › búscalo", Toast.LENGTH_LONG).show()
-        return ok || shareText(context, text)
+        val ok = shareText(context, text)
+        if (ok) Toast.makeText(context, "Busca \"${group.name}\" y envía", Toast.LENGTH_LONG).show()
+        return ok
     }
 
     /** Enviar el WhatsApp de un aviso: al contacto (chat abierto con el texto) o a grupos (texto armado, eliges el grupo). */
@@ -125,7 +140,6 @@ object WhatsApp {
         val text = task.message.ifBlank { task.title }
         if (!task.toGroup && normalize(task.phone).isNotEmpty()) return open(context, task.phone, text)
         if (!task.toGroup) return shareText(context, text)
-        if (GroupAutomation.send(context, task.groups, text)) return true
         val single = task.groups.singleOrNull()
         return if (single != null) openGroup(context, single, text) else shareText(context, text)
     }

@@ -198,9 +198,7 @@ private fun AlarmScreen(
             Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (task.isWhatsApp && task.toGroup && task.groups.isNotEmpty()) {
                     Text(
-                        if (GroupAutomation.isEnabled(LocalContext.current)) "Al confirmar, abro el grupo y envío el mensaje."
-                        else if (task.groups.size == 1) "Se abre el menú Compartir: toca \"${task.groups.first().name}\" arriba y luego enviar."
-                        else "Se abre WhatsApp con el mensaje: marca los grupos y toca enviar.",
+                        WhatsApp.groupHint(task.groups),
                         color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
                     )
                 }

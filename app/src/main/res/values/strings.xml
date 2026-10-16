@@ -2,5 +2,4 @@
 <resources>
     <string name="shortcut_voice_short">Dictar</string>
     <string name="shortcut_voice_long">Dictar a la agenda</string>
-    <string name="group_send_description">Solo actúa dentro de WhatsApp y solo cuando tocas Enviar en un aviso de Agenda WA: abre el grupo y escribe el mensaje (o marca el grupo en la lista). El envío final lo haces tú. No lee ni guarda tus chats.</string>
 </resources>

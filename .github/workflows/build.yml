@@ -37,7 +37,7 @@ jobs:
           mkdir -p out
           cp build.log out/ 2>/dev/null || echo "no log" > out/build.log
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            cp app/build/outputs/apk/release/app-release.apk out/AgendaWA-v2.7.3.apk
+            cp app/build/outputs/apk/release/app-release.apk out/AgendaWA-v2.8.0.apk
             echo "AgendaWA OK" > out/status.txt
           else
             echo "AgendaWA FAIL" > out/status.txt

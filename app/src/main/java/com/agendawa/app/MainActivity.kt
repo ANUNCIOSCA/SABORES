@@ -1059,7 +1059,6 @@ private fun AlarmSettingsDialog(
     val exact = remember(refresh) { ReminderScheduler.canScheduleExact(context) }
     val fullScreen = remember(refresh) { AlarmCapabilities.canUseFullScreen(context) }
     val battery = remember(refresh) { AlarmCapabilities.ignoresBatteryOptimizations(context) }
-    val groupSend = remember(refresh) { GroupAutomation.isEnabled(context) }
     // Al volver de los ajustes del teléfono, se ve el estado nuevo
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1500); refresh++ } }
 
@@ -1082,24 +1081,6 @@ private fun AlarmSettingsDialog(
                     Text(
                         "Si el teléfono frena la app para ahorrar batería, las alarmas pueden llegar tarde o no sonar.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                var showGroupSetup by remember { mutableStateOf(false) }
-                PermissionRow("Envío directo a grupos", groupSend) { showGroupSetup = true }
-                if (showGroupSetup) GroupSetupDialog(onDismiss = { showGroupSetup = false; refresh++ })
-                Text(
-                    if (groupSend) "Al tocar Enviar se abre el grupo con el mensaje escrito: solo tocas enviar."
-                    else "Para que al tocar Enviar la app entre al grupo y lo envíe: toca Configurar ahora y sigue los 3 pasos (una sola vez).",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                // Registro del último envío: si algo falla, se le toma captura para revisarlo
-                var showLog by remember { mutableStateOf(false) }
-                TextButton(onClick = { showLog = !showLog }) { Text(if (showLog) "Ocultar registro de envíos" else "Ver registro de envíos") }
-                if (showLog) {
-                    val log = remember(refresh) { GroupAutomation.readLog(context) }
-                    Text(
-                        log.ifBlank { "Todavía no hay envíos a grupos." }.lines().takeLast(25).joinToString("\n"),
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 AlarmCapabilities.brandTip()?.let { tip ->

@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -59,6 +60,17 @@ class AlarmActivity : ComponentActivity() {
         const val EXTRA_SEND = "send_whatsapp"
     }
 
+    /**
+     * Envío a grupos desde la notificación: primero se muestra la pantalla con "ENVIAR A <grupo>"
+     * para confirmar; al tocarlo, la app abre el grupo y envía (con el permiso de accesibilidad).
+     */
+    private fun confirmGroup(intent: Intent): Boolean {
+        val task = TaskStore.find(this, intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L)) ?: return false
+        if (!task.toGroup || task.groups.isEmpty()) return false
+        AlarmSoundService.stop(this)
+        return true
+    }
+
     /** Apaga la alarma, marca el aviso como hecho y abre WhatsApp con el mensaje escrito. */
     private fun sendNow(id: Long) {
         val task = TaskStore.find(this, id)
@@ -72,7 +84,7 @@ class AlarmActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (intent.getBooleanExtra(EXTRA_SEND, false)) {
+        if (intent.getBooleanExtra(EXTRA_SEND, false) && !confirmGroup(intent)) {
             sendNow(intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L))
             return
         }
@@ -115,7 +127,7 @@ class AlarmActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_SEND, false)) {
+        if (intent.getBooleanExtra(EXTRA_SEND, false) && !confirmGroup(intent)) {
             sendNow(intent.getLongExtra(ReminderScheduler.EXTRA_TASK_ID, -1L))
             return
         }
@@ -184,6 +196,13 @@ private fun AlarmScreen(
                 }
             }
             Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (task.isWhatsApp && task.toGroup && task.groups.isNotEmpty()) {
+                    Text(
+                        if (GroupAutomation.isEnabled(LocalContext.current)) "Al confirmar, abro el grupo y envío el mensaje."
+                        else "Envío directo a grupos está apagado: tendrás que elegir el grupo en WhatsApp.",
+                        color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 if (task.isWhatsApp) {
                     // El mensaje ya está listo: lo principal es ENVIAR
                     Button(
@@ -193,7 +212,10 @@ private fun AlarmScreen(
                     ) {
                         Icon(Icons.AutoMirrored.Rounded.Send, null, modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("ENVIAR", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(
+                            if (task.toGroup && task.groups.isNotEmpty()) "ENVIAR A " + task.groups.joinToString(", ") { it.name }.uppercase() else "ENVIAR",
+                            fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1,
+                        )
                     }
                 }
                 Button(

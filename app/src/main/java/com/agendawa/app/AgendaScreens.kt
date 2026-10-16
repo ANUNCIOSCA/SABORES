@@ -1279,6 +1279,14 @@ fun SendWhatsAppDialog(
                         style = MaterialTheme.typography.bodySmall, color = AgendaDanger,
                     )
                 }
+                if (task.toGroup && task.groups.isNotEmpty() && !GroupAutomation.isEnabled(LocalContext.current)) {
+                    val ctx = LocalContext.current
+                    Text(
+                        "Para que la app abra el grupo y envíe sola, activa \"Envío directo a grupos\" (una sola vez).",
+                        style = MaterialTheme.typography.bodySmall, color = AgendaDanger,
+                    )
+                    TextButton(onClick = { GroupAutomation.openSettings(ctx) }) { Text("Activar envío directo") }
+                }
                 if (several) {
                     Text("Envíalo a todos de una vez (los marcas en WhatsApp) o grupo por grupo; el mensaje va ya escrito:", style = MaterialTheme.typography.bodySmall)
                     task.groups.forEach { g ->
@@ -1303,6 +1311,8 @@ fun SendWhatsAppDialog(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         when {
+                            task.toGroup && task.groups.isNotEmpty() && GroupAutomation.isEnabled(LocalContext.current) ->
+                                "Enviar a " + task.groups.joinToString(", ") { it.name }
                             several -> "Enviar a todos (los marcas en WhatsApp)"
                             task.toGroup && task.groups.isEmpty() -> "Enviar (eliges el grupo)"
                             else -> "Enviar"

@@ -519,7 +519,8 @@ fun AgendaWaApp(
 
     val openWhatsApp: (AgendaTask) -> Unit = { task ->
         // Varios grupos: se muestra la lista para abrirlos uno por uno o enviar a todos
-        if (task.toGroup && task.groups.size > 1) sendTask = task
+        // A grupos: primero se confirma "Enviar a <grupo>" y luego la app abre el grupo y envía
+        if (task.toGroup && task.groups.isNotEmpty()) sendTask = task
         else if (!WhatsApp.send(context, task)) showMessage("No se pudo abrir WhatsApp.")
         else if (!task.completed) {
             // Se abrió WhatsApp con el mensaje: el aviso queda hecho (o pasa a su próxima fecha) y no vuelve a sonar
@@ -1092,6 +1093,16 @@ private fun AlarmSettingsDialog(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (!groupSend) TextButton(onClick = { AlarmCapabilities.openAppDetails(context) }) { Text("Abrir ajustes de la app (⋮)") }
+                // Registro del último envío: si algo falla, se le toma captura para revisarlo
+                var showLog by remember { mutableStateOf(false) }
+                TextButton(onClick = { showLog = !showLog }) { Text(if (showLog) "Ocultar registro de envíos" else "Ver registro de envíos") }
+                if (showLog) {
+                    val log = remember(refresh) { GroupAutomation.readLog(context) }
+                    Text(
+                        log.ifBlank { "Todavía no hay envíos a grupos." }.lines().takeLast(25).joinToString("\n"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 AlarmCapabilities.brandTip()?.let { tip ->
                     Spacer(Modifier.height(6.dp))
                     Text(tip, style = MaterialTheme.typography.bodySmall, color = AgendaDanger)

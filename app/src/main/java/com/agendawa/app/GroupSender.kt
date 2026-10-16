@@ -19,33 +19,39 @@ import android.widget.Toast
  * Envío directo a grupos de WhatsApp.
  *
  * WhatsApp no deja abrir un grupo con el texto escrito por enlace. Con el permiso de accesibilidad
- * (que el usuario activa una sola vez) la app hace los toques por él:
- *  - Grupo con enlace: abre el grupo y escribe el mensaje en la caja de texto. Solo falta tocar enviar.
- *  - Grupo sin enlace o varios grupos: abre WhatsApp con el mensaje y marca los grupos en la lista
- *    (buscándolos por nombre si no se ven). Solo falta tocar la flecha de enviar.
- * El mensaje también queda copiado por si algo falla: se puede pegar a mano.
+ * (que el usuario activa una sola vez) la app hace los toques por él, DESPUÉS de que confirma
+ * "Enviar a <grupo>" en Agenda WA:
+ *  - Grupo con enlace: abre el grupo, escribe el mensaje y toca enviar.
+ *  - Grupo sin enlace o varios grupos: abre la lista "Enviar a" de WhatsApp con el mensaje,
+ *    marca los grupos (buscándolos por nombre) y toca enviar.
+ * El mensaje también queda copiado por si algo falla. Cada paso queda en un registro corto
+ * (Configurar alarmas › Envío directo a grupos) para poder revisar qué pasó.
  */
 object GroupAutomation {
-    private const val WINDOW_MS = 30_000L
-    private const val FILL_FALLBACK_MS = 9_000L
+    private const val WINDOW_MS = 35_000L
+    private const val FILL_FALLBACK_MS = 10_000L
+    private const val PREFS = "group_send"
 
     enum class Mode { FILL, PICK }
 
-    class Job(val text: String, names: List<String>, var mode: Mode, val startedAt: Long = System.currentTimeMillis()) {
+    class Job(val text: String, names: List<String>, var mode: Mode, val autoSend: Boolean, val startedAt: Long = System.currentTimeMillis()) {
         val pending = names.map { it.trim() }.filter { it.isNotBlank() }.toMutableList()
         val total = pending.size
         var searching = false
         var searchTyped = ""
+        var textSet = false
         var lastAction = 0L
         val expired get() = System.currentTimeMillis() - startedAt > WINDOW_MS
     }
 
     @Volatile var job: Job? = null
+    private val logLines = ArrayDeque<String>()
 
     fun isEnabled(context: Context): Boolean {
+        if (GroupSendService.running) return true
         val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         val me = ComponentName(context, GroupSendService::class.java)
-        return enabled.split(':').any { ComponentName.unflattenFromString(it) == me }
+        return enabled.split(':').any { ComponentName.unflattenFromString(it.trim()) == me }
     }
 
     fun openSettings(context: Context) {
@@ -55,22 +61,27 @@ object GroupAutomation {
     }
 
     /** Devuelve false si el permiso no está activo (se usa entonces el envío normal). */
-    fun send(context: Context, groups: List<WaGroup>, text: String): Boolean {
-        if (groups.isEmpty() || !isEnabled(context)) return false
+    fun send(context: Context, groups: List<WaGroup>, text: String, autoSend: Boolean = true): Boolean {
+        if (groups.isEmpty()) return false
+        if (!isEnabled(context)) { log(context, "Permiso de accesibilidad apagado: se usa la lista normal"); return false }
         copy(context, text)
         val single = groups.singleOrNull()
-        return if (single != null && WhatsApp.isGroupLink(single.link)) {
-            job = Job(text, listOf(single.name), Mode.FILL)
-            openLink(context, single.link) || startPick(context, text, groups.map { it.name })
+        log(context, "Inicio: ${groups.joinToString { it.name }}" + if (single != null && WhatsApp.isGroupLink(single.link)) " (con enlace)" else " (lista)")
+        val ok = if (single != null && WhatsApp.isGroupLink(single.link)) {
+            job = Job(text, listOf(single.name), Mode.FILL, autoSend)
+            openLink(context, single.link) || startPick(context, text, groups.map { it.name }, autoSend)
         } else {
-            startPick(context, text, groups.map { it.name })
+            startPick(context, text, groups.map { it.name }, autoSend)
         }
+        if (ok) GroupSendService.kick()
+        return ok
     }
 
-    fun startPick(context: Context, text: String, names: List<String>): Boolean {
-        job = Job(text, names, Mode.PICK)
+    fun startPick(context: Context, text: String, names: List<String>, autoSend: Boolean): Boolean {
+        job = Job(text, names, Mode.PICK, autoSend)
         val ok = WhatsApp.shareText(context, text)
         if (!ok) job = null
+        GroupSendService.kick()
         return ok
     }
 
@@ -93,68 +104,127 @@ object GroupAutomation {
     }
 
     internal fun fillFallbackDue(j: Job) = j.mode == Mode.FILL && System.currentTimeMillis() - j.startedAt > FILL_FALLBACK_MS
+
+    fun log(context: Context, line: String) {
+        synchronized(logLines) {
+            if (logLines.isEmpty()) {
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("log", "")!!
+                    .lines().filter { it.isNotBlank() }.forEach { logLines.addLast(it) }
+            }
+            logLines.addLast(formatDate(System.currentTimeMillis(), "HH:mm:ss") + " " + line)
+            while (logLines.size > 40) logLines.removeFirst()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("log", logLines.joinToString("\n")).apply()
+        }
+    }
+
+    fun readLog(context: Context): String =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("log", "").orEmpty()
 }
 
 class GroupSendService : AccessibilityService() {
+    companion object {
+        @Volatile var running = false
+        @Volatile private var instance: GroupSendService? = null
+
+        /** Empieza a revisar la pantalla de WhatsApp aunque no lleguen eventos. */
+        fun kick() { instance?.let { s -> s.handler.post { s.poll() } } }
+    }
+
     private val handler = Handler(Looper.getMainLooper())
+    private var polling = false
+    private var lastScreen = ""
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        running = true; instance = this
+        GroupAutomation.log(this, "Servicio activo")
         toast("Envío directo a grupos activado")
+    }
+
+    override fun onDestroy() {
+        running = false; instance = null
+        super.onDestroy()
     }
 
     override fun onInterrupt() {}
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val j = GroupAutomation.job ?: return
-        if (j.expired) { GroupAutomation.job = null; return }
-        val pkg = event?.packageName?.toString() ?: return
-        if (!pkg.startsWith("com.whatsapp")) return
-        // Los cambios de pantalla llegan en ráfaga: se espera un momento a que WhatsApp termine de dibujar
-        handler.removeCallbacksAndMessages(null)
-        handler.postDelayed({ step() }, 250)
+        if (GroupAutomation.job != null) poll()
     }
 
-    private fun step() {
-        val j = GroupAutomation.job ?: return
-        if (j.expired) { GroupAutomation.job = null; return }
-        val root = rootInActiveWindow ?: return
-        if (!root.packageName.toString().startsWith("com.whatsapp")) return
+    /** Revisa la pantalla cada medio segundo mientras haya un envío pendiente. */
+    fun poll() {
+        if (polling) return
+        polling = true
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                val j = GroupAutomation.job
+                if (j == null) { polling = false; return }
+                if (j.expired) {
+                    GroupAutomation.log(this@GroupSendService, "Tiempo agotado: faltó ${j.pending.joinToString()} (pantalla: $lastScreen)")
+                    toast("No encontré el grupo: el mensaje quedó copiado, pégalo a mano")
+                    GroupAutomation.job = null; polling = false; return
+                }
+                runCatching { step(j) }.onFailure { GroupAutomation.log(this@GroupSendService, "Error: ${it.message}") }
+                handler.postDelayed(this, 500)
+            }
+        }, 300)
+    }
+
+    /** La ventana de WhatsApp que está en pantalla (no la de Agenda WA que se está cerrando). */
+    private fun whatsappRoot(): AccessibilityNodeInfo? {
+        rootInActiveWindow?.let { if (it.packageName?.toString()?.startsWith("com.whatsapp") == true) return it }
+        return runCatching { windows }.getOrNull().orEmpty()
+            .mapNotNull { it.root }
+            .firstOrNull { it.packageName?.toString()?.startsWith("com.whatsapp") == true }
+    }
+
+    private fun step(j: GroupAutomation.Job) {
+        val root = whatsappRoot() ?: return
+        val screen = describe(root)
+        if (screen != lastScreen) { lastScreen = screen; GroupAutomation.log(this, "Pantalla: $screen") }
+        if (System.currentTimeMillis() - j.lastAction < 700) return
         when (j.mode) {
             GroupAutomation.Mode.FILL -> fill(j, root)
             GroupAutomation.Mode.PICK -> pick(j, root)
         }
     }
 
-    /** Dentro del grupo: escribe el mensaje en la caja de texto. */
+    /** Dentro del grupo: escribe el mensaje en la caja de texto y toca enviar. */
     private fun fill(j: GroupAutomation.Job, root: AccessibilityNodeInfo) {
+        if (j.textSet) {
+            val send = sendButton(root)
+            if (send != null && click(send)) finish(j, "Enviado en el grupo") else if (send == null) GroupAutomation.log(this, "No veo el botón enviar")
+            return
+        }
         val entry = findAll(root) { n ->
             n.isEditable && (n.viewIdResourceName?.endsWith("/entry") == true ||
                 Regex("mensaje|message", RegexOption.IGNORE_CASE).containsMatchIn(n.hintText?.toString().orEmpty()))
         }.firstOrNull()
         if (entry != null) {
             setText(entry, j.text)
-            GroupAutomation.job = null
-            toast("Mensaje listo: toca enviar")
+            j.textSet = true; j.lastAction = System.currentTimeMillis()
+            GroupAutomation.log(this, "Mensaje escrito en el grupo")
+            if (!j.autoSend) finish(j, "Mensaje listo: toca enviar")
             return
         }
         // Algunas versiones muestran primero la ficha del grupo con un botón para abrirlo
         val open = findAll(root) { n ->
-            val t = n.text?.toString()?.trim().orEmpty()
-            t.matches(Regex("(?i)(ver|abrir|ir al) grupo|(view|open|go to) group|ver chat|view chat"))
+            n.text?.toString()?.trim().orEmpty().matches(Regex("(?i)(ver|abrir|ir al) (grupo|chat)|(view|open|go to) (group|chat)"))
         }.firstOrNull()
-        if (open != null && System.currentTimeMillis() - j.lastAction > 1500) {
+        if (open != null) {
+            GroupAutomation.log(this, "Toco \"${open.text}\"")
             click(open); j.lastAction = System.currentTimeMillis(); return
         }
-        // Si el enlace no lleva al chat, se usa la lista de WhatsApp
         if (GroupAutomation.fillFallbackDue(j)) {
-            GroupAutomation.startPick(this, j.text, j.pending)
+            GroupAutomation.log(this, "El enlace no abrió el chat: uso la lista de WhatsApp")
+            GroupAutomation.startPick(this, j.text, j.pending, j.autoSend)
         }
     }
 
-    /** En la lista "Enviar a": marca cada grupo por su nombre, buscándolo si no se ve. */
+    /** En la lista "Enviar a": marca cada grupo por su nombre, buscándolo si no se ve, y toca enviar. */
     private fun pick(j: GroupAutomation.Job, root: AccessibilityNodeInfo) {
-        while (j.pending.isNotEmpty()) {
+        if (j.pending.isNotEmpty()) {
             val name = j.pending.first()
             val texts = findAll(root) { n -> !n.isEditable && !n.text.isNullOrBlank() }
             // Nombre exacto; si no, uno solo que lo contenga (ej. "P01" → "P01 Repórtalo 24")
@@ -163,11 +233,11 @@ class GroupSendService : AccessibilityService() {
                 ?: partial.firstOrNull()?.takeIf { partial.size == 1 || j.searchTyped == name }
             if (node != null) {
                 if (click(node)) {
+                    GroupAutomation.log(this, "Marcado \"${node.text}\"")
                     j.pending.removeAt(0)
                     j.searching = false; j.searchTyped = ""
-                    j.lastAction = System.currentTimeMillis()
-                    continue
-                }
+                } else GroupAutomation.log(this, "No pude tocar \"${node.text}\"")
+                j.lastAction = System.currentTimeMillis()
                 return
             }
             // No se ve: se busca por el nombre
@@ -175,6 +245,7 @@ class GroupSendService : AccessibilityService() {
             if (field != null) {
                 if (j.searchTyped != name) {
                     setText(field, name); j.searchTyped = name; j.lastAction = System.currentTimeMillis()
+                    GroupAutomation.log(this, "Busco \"$name\"")
                 }
                 return
             }
@@ -183,12 +254,38 @@ class GroupSendService : AccessibilityService() {
                     val d = n.contentDescription?.toString().orEmpty()
                     d.equals("Buscar", true) || d.equals("Search", true) || n.viewIdResourceName?.endsWith("/menuitem_search") == true
                 }.firstOrNull()
-                if (search != null && click(search)) { j.searching = true; j.lastAction = System.currentTimeMillis() }
+                if (search != null && click(search)) {
+                    j.searching = true; j.lastAction = System.currentTimeMillis()
+                    GroupAutomation.log(this, "Abro la búsqueda")
+                }
             }
             return
         }
+        if (!j.autoSend) { finish(j, if (j.total > 1) "Grupos marcados: toca enviar" else "Grupo marcado: toca enviar"); return }
+        val send = sendButton(root)
+        if (send != null && click(send)) finish(j, if (j.total > 1) "Enviado a ${j.total} grupos" else "Enviado al grupo")
+        else GroupAutomation.log(this, "Grupo marcado, pero no veo el botón enviar")
+    }
+
+    private fun finish(j: GroupAutomation.Job, msg: String) {
         GroupAutomation.job = null
-        toast(if (j.total > 1) "Grupos marcados: toca la flecha de enviar" else "Grupo marcado: toca la flecha de enviar")
+        GroupAutomation.log(this, msg)
+        toast(msg)
+    }
+
+    private fun sendButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+        findAll(root) { n ->
+            val id = n.viewIdResourceName.orEmpty()
+            val d = n.contentDescription?.toString().orEmpty()
+            id.endsWith("/send") || id.endsWith("/send_btn") || d.equals("Enviar", true) || d.equals("Send", true)
+        }.lastOrNull()
+
+    /** Resumen corto de la pantalla para el registro: qué botones y textos se ven. */
+    private fun describe(root: AccessibilityNodeInfo): String {
+        val ids = findAll(root) { !it.viewIdResourceName.isNullOrBlank() }
+            .mapNotNull { it.viewIdResourceName?.substringAfter("/") }.distinct().take(8)
+        val texts = findAll(root) { !it.text.isNullOrBlank() && !it.isEditable }.map { it.text.toString().take(20) }.distinct().take(6)
+        return (ids + texts).joinToString(", ")
     }
 
     private fun findAll(root: AccessibilityNodeInfo, match: (AccessibilityNodeInfo) -> Boolean): List<AccessibilityNodeInfo> {

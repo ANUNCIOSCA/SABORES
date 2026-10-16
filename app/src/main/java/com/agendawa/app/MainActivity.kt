@@ -1084,15 +1084,14 @@ private fun AlarmSettingsDialog(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                PermissionRow("Envío directo a grupos", groupSend) { GroupAutomation.openSettings(context); refresh++ }
+                var showGroupSetup by remember { mutableStateOf(false) }
+                PermissionRow("Envío directo a grupos", groupSend) { showGroupSetup = true }
+                if (showGroupSetup) GroupSetupDialog(onDismiss = { showGroupSetup = false; refresh++ })
                 Text(
                     if (groupSend) "Al tocar Enviar se abre el grupo con el mensaje escrito: solo tocas enviar."
-                    else "Para que al tocar Enviar se abra el grupo con el mensaje escrito: Configurar ahora › Apps instaladas › " +
-                        "\"Agenda WA: envío directo a grupos\" › Activar. Si sale \"Ajuste restringido\": Ajustes › Apps › Agenda WA › ⋮ › " +
-                        "Permitir ajustes restringidos, y vuelve a intentar.",
+                    else "Para que al tocar Enviar la app entre al grupo y lo envíe: toca Configurar ahora y sigue los 3 pasos (una sola vez).",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (!groupSend) TextButton(onClick = { AlarmCapabilities.openAppDetails(context) }) { Text("Abrir ajustes de la app (⋮)") }
                 // Registro del último envío: si algo falla, se le toma captura para revisarlo
                 var showLog by remember { mutableStateOf(false) }
                 TextButton(onClick = { showLog = !showLog }) { Text(if (showLog) "Ocultar registro de envíos" else "Ver registro de envíos") }

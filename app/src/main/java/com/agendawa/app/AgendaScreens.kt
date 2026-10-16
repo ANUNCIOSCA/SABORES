@@ -1097,6 +1097,11 @@ private fun GroupPicker(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
         )
     }
+    if (!direct && selected.isNotEmpty()) {
+        var setup by remember { mutableStateOf(false) }
+        TextButton(onClick = { setup = true }) { Text("Activar envío directo al grupo (1 minuto)") }
+        if (setup) GroupSetupDialog(onDismiss = { setup = false })
+    }
     if (adding) AddGroupDialog(onDismiss = { adding = false }, onSave = { onAdd(it); adding = false })
 }
 
@@ -1287,7 +1292,9 @@ fun SendWhatsAppDialog(
                         else "Se abre WhatsApp con el mensaje: marca los grupos y envía.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = { GroupAutomation.openSettings(ctx) }) { Text("Activar envío directo (opcional)") }
+                    var setup by remember { mutableStateOf(false) }
+                    TextButton(onClick = { setup = true }) { Text("Activar envío directo (1 minuto)") }
+                    if (setup) GroupSetupDialog(onDismiss = { setup = false })
                 }
                 if (several) {
                     Text("Envíalo a todos de una vez (los marcas en WhatsApp) o grupo por grupo; el mensaje va ya escrito:", style = MaterialTheme.typography.bodySmall)

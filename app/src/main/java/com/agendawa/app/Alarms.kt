@@ -111,7 +111,7 @@ object WhatsApp {
         val single = groups.singleOrNull()
         return when {
             single != null && isGroupLink(single.link) ->
-                "Se abre \"${single.name}\" directo y el mensaje va copiado: mantén presionado el campo de texto › Pegar › enviar."
+                "Se abre \"${single.name}\" directo con el mensaje copiado: toca la caja de mensaje › toca 📋 en el teclado › enviar."
             single != null ->
                 "Se abre WhatsApp con el mensaje: busca \"${single.name}\" y envía. Guarda el enlace del grupo para que se abra directo."
             groups.isEmpty() -> "Se abre WhatsApp con el mensaje: eliges el grupo y envías."
@@ -137,7 +137,7 @@ object WhatsApp {
                     true
                 }.getOrDefault(false)
                 if (ok) {
-                    Toast.makeText(context, "Mensaje copiado: mantén presionado el campo de texto › Pegar › enviar", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Toca la caja de mensaje › toca 📋 en el teclado › enviar", Toast.LENGTH_LONG).show()
                     return true
                 }
             }

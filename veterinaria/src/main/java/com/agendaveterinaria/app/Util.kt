@@ -109,9 +109,14 @@ object WhatsApp {
     fun open(context: Context, phone: String, text: String): Boolean {
         val digits = normalize(phone)
         val url = (if (digits.isNotEmpty()) "https://wa.me/$digits" else "https://wa.me/") + "?text=" + URLEncoder.encode(text, "UTF-8").replace("+", "%20")
-        return runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
-        }.getOrDefault(false)
+        // Directo en la app de WhatsApp (chat abierto con el texto escrito); si no está, el enlace normal
+        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b", null)) {
+            val ok = runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { if (pkg != null) setPackage(pkg) }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+            }.getOrDefault(false)
+            if (ok) return true
+        }
+        return false
     }
 
     fun call(context: Context, phone: String) = runCatching {

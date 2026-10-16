@@ -1086,8 +1086,7 @@ private fun GroupPicker(
         Text(
             when {
                 selected.isEmpty() -> "A la hora se abre WhatsApp con el mensaje listo y eliges el grupo."
-                selected.size == 1 && WhatsApp.isGroupLink(selected.first().link) -> "A la hora se abre el grupo con el mensaje copiado: solo pegas y envías."
-                selected.size == 1 -> "A la hora eliges \"${selected.first().name}\" en la lista de WhatsApp y envías."
+                selected.size == 1 -> "A la hora se abre WhatsApp con el mensaje ya escrito: tocas \"${selected.first().name}\" y enviar."
                 else -> "A la hora puedes enviarlo a todos de una vez (los marcas en WhatsApp) o abrirlos uno por uno."
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
@@ -1276,7 +1275,7 @@ fun SendWhatsAppDialog(
                     )
                 }
                 if (several) {
-                    Text("Ábrelos uno por uno (el mensaje queda copiado, solo pegas) o envía a todos de una vez:", style = MaterialTheme.typography.bodySmall)
+                    Text("Envíalo a todos de una vez (los marcas en WhatsApp) o grupo por grupo; el mensaje va ya escrito:", style = MaterialTheme.typography.bodySmall)
                     task.groups.forEach { g ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -1286,9 +1285,7 @@ fun SendWhatsAppDialog(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(g.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (WhatsApp.isGroupLink(g.link)) {
-                                OutlinedButton(onClick = { opened = opened + g.name; onOpenGroup(g) }) { Text(if (g.name in opened) "Abrir otra vez" else "Abrir") }
-                            }
+                            OutlinedButton(onClick = { opened = opened + g.name; onOpenGroup(g) }) { Text(if (g.name in opened) "Otra vez" else "Enviar") }
                         }
                     }
                 }

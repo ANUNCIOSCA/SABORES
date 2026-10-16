@@ -96,6 +96,8 @@ object WhatsApp {
 
     /** Mensaje para un grupo: se abre WhatsApp con el texto armado y se toca el grupo para enviarlo. */
     fun openGroup(context: Context, group: WaGroup, text: String): Boolean {
+        // Con el permiso de accesibilidad se abre el grupo con el texto escrito (o queda marcado en la lista)
+        if (GroupAutomation.send(context, listOf(group), text)) return true
         val ok = shareText(context, text)
         if (ok) Toast.makeText(context, "Toca \"${group.name}\" y luego enviar", Toast.LENGTH_LONG).show()
         return ok
@@ -106,6 +108,7 @@ object WhatsApp {
         val text = task.message.ifBlank { task.title }
         if (!task.toGroup && normalize(task.phone).isNotEmpty()) return open(context, task.phone, text)
         if (!task.toGroup) return shareText(context, text)
+        if (GroupAutomation.send(context, task.groups, text)) return true
         val single = task.groups.singleOrNull()
         return if (single != null) openGroup(context, single, text) else shareText(context, text)
     }

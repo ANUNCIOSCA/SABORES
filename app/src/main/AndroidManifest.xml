@@ -68,6 +68,19 @@
             android:taskAffinity="com.agendawa.app.alarm" />
 
         <service
+            android:name=".GroupSendService"
+            android:exported="true"
+            android:label="Agenda WA: envío directo a grupos"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/group_send_service" />
+        </service>
+
+        <service
             android:name=".AlarmSoundService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />

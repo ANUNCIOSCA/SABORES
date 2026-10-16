@@ -1045,6 +1045,7 @@ private fun GroupPicker(
 ) {
     var adding by remember { mutableStateOf(false) }
     var managing by remember { mutableStateOf(false) }
+    val direct = GroupAutomation.isEnabled(LocalContext.current)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("¿A qué grupo(s)?", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         if (favorites.isEmpty()) {
@@ -1085,7 +1086,12 @@ private fun GroupPicker(
         Text(
             when {
                 selected.isEmpty() -> "A la hora se abre WhatsApp con el mensaje listo y eliges el grupo."
-                selected.size == 1 -> "A la hora se abre WhatsApp con el mensaje ya escrito: tocas \"${selected.first().name}\" y enviar."
+                direct && selected.size == 1 && WhatsApp.isGroupLink(selected.first().link) ->
+                    "A la hora se abre \"${selected.first().name}\" con el mensaje escrito: solo tocas enviar."
+                direct -> "A la hora se abre WhatsApp con el mensaje y ${if (selected.size == 1) "el grupo" else "los grupos"} ya marcado${if (selected.size == 1) "" else "s"}: solo tocas enviar. " +
+                    "El nombre debe ser igual al del grupo en WhatsApp."
+                selected.size == 1 -> "A la hora se abre WhatsApp con el mensaje ya escrito: tocas \"${selected.first().name}\" y enviar. " +
+                    "(Activa \"Envío directo a grupos\" en Configurar alarmas para que se abra solo.)"
                 else -> "A la hora puedes enviarlo a todos de una vez (los marcas en WhatsApp) o abrirlos uno por uno."
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,

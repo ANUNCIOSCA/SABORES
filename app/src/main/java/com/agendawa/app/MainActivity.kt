@@ -1058,6 +1058,7 @@ private fun AlarmSettingsDialog(
     val exact = remember(refresh) { ReminderScheduler.canScheduleExact(context) }
     val fullScreen = remember(refresh) { AlarmCapabilities.canUseFullScreen(context) }
     val battery = remember(refresh) { AlarmCapabilities.ignoresBatteryOptimizations(context) }
+    val groupSend = remember(refresh) { GroupAutomation.isEnabled(context) }
     // Al volver de los ajustes del teléfono, se ve el estado nuevo
     LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1500); refresh++ } }
 
@@ -1082,6 +1083,15 @@ private fun AlarmSettingsDialog(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                PermissionRow("Envío directo a grupos", groupSend) { GroupAutomation.openSettings(context); refresh++ }
+                Text(
+                    if (groupSend) "Al tocar Enviar se abre el grupo con el mensaje escrito: solo tocas enviar."
+                    else "Para que al tocar Enviar se abra el grupo con el mensaje escrito: Configurar ahora › Apps instaladas › " +
+                        "\"Agenda WA: envío directo a grupos\" › Activar. Si sale \"Ajuste restringido\": Ajustes › Apps › Agenda WA › ⋮ › " +
+                        "Permitir ajustes restringidos, y vuelve a intentar.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (!groupSend) TextButton(onClick = { AlarmCapabilities.openAppDetails(context) }) { Text("Abrir ajustes de la app (⋮)") }
                 AlarmCapabilities.brandTip()?.let { tip ->
                     Spacer(Modifier.height(6.dp))
                     Text(tip, style = MaterialTheme.typography.bodySmall, color = AgendaDanger)

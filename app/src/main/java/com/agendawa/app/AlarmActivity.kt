@@ -199,7 +199,8 @@ private fun AlarmScreen(
                 if (task.isWhatsApp && task.toGroup && task.groups.isNotEmpty()) {
                     Text(
                         if (GroupAutomation.isEnabled(LocalContext.current)) "Al confirmar, abro el grupo y envío el mensaje."
-                        else "Envío directo a grupos está apagado: tendrás que elegir el grupo en WhatsApp.",
+                        else if (task.groups.size == 1) "Se abre el menú Compartir: toca \"${task.groups.first().name}\" arriba y luego enviar."
+                        else "Se abre WhatsApp con el mensaje: marca los grupos y toca enviar.",
                         color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
                     )
                 }

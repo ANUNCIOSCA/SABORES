@@ -98,9 +98,26 @@ object WhatsApp {
     fun openGroup(context: Context, group: WaGroup, text: String): Boolean {
         // Con el permiso de accesibilidad se abre el grupo con el texto escrito (o queda marcado en la lista)
         if (GroupAutomation.send(context, listOf(group), text)) return true
-        val ok = shareText(context, text)
-        if (ok) Toast.makeText(context, "Toca \"${group.name}\" y luego enviar", Toast.LENGTH_LONG).show()
-        return ok
+        return shareToChat(context, text, group.name)
+    }
+
+    /**
+     * Sin permisos: abre el menú Compartir de Android. Arriba salen los chats y grupos que más usas
+     * en WhatsApp: al tocar el grupo se abre con el mensaje escrito y solo falta enviar.
+     */
+    fun shareToChat(context: Context, text: String, groupName: String): Boolean {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        val ok = runCatching {
+            context.startActivity(
+                Intent.createChooser(send, "Toca \"$groupName\" arriba y envía").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            true
+        }.getOrDefault(false)
+        if (ok) Toast.makeText(context, "Toca \"$groupName\" arriba. Si no sale: WhatsApp › búscalo", Toast.LENGTH_LONG).show()
+        return ok || shareText(context, text)
     }
 
     /** Enviar el WhatsApp de un aviso: al contacto (chat abierto con el texto) o a grupos (texto armado, eliges el grupo). */

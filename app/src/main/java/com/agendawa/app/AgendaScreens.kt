@@ -1090,8 +1090,8 @@ private fun GroupPicker(
                     "A la hora se abre \"${selected.first().name}\" con el mensaje escrito: solo tocas enviar."
                 direct -> "A la hora se abre WhatsApp con el mensaje y ${if (selected.size == 1) "el grupo" else "los grupos"} ya marcado${if (selected.size == 1) "" else "s"}: solo tocas enviar. " +
                     "El nombre debe ser igual al del grupo en WhatsApp."
-                selected.size == 1 -> "A la hora se abre WhatsApp con el mensaje ya escrito: tocas \"${selected.first().name}\" y enviar. " +
-                    "(Activa \"Envío directo a grupos\" en Configurar alarmas para que se abra solo.)"
+                selected.size == 1 -> "A la hora se abre el menú Compartir: tocas \"${selected.first().name}\" arriba y envías. " +
+                    "(Opcional: activa \"Envío directo a grupos\" en Configurar alarmas y la app lo envía sola.)"
                 else -> "A la hora puedes enviarlo a todos de una vez (los marcas en WhatsApp) o abrirlos uno por uno."
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
@@ -1282,10 +1282,12 @@ fun SendWhatsAppDialog(
                 if (task.toGroup && task.groups.isNotEmpty() && !GroupAutomation.isEnabled(LocalContext.current)) {
                     val ctx = LocalContext.current
                     Text(
-                        "Para que la app abra el grupo y envíe sola, activa \"Envío directo a grupos\" (una sola vez).",
-                        style = MaterialTheme.typography.bodySmall, color = AgendaDanger,
+                        if (task.groups.size == 1) "Se abre el menú Compartir: toca \"${task.groups.first().name}\" arriba y envía. " +
+                            "(Opcional: con \"Envío directo a grupos\" activado, la app lo envía sola.)"
+                        else "Se abre WhatsApp con el mensaje: marca los grupos y envía.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = { GroupAutomation.openSettings(ctx) }) { Text("Activar envío directo") }
+                    TextButton(onClick = { GroupAutomation.openSettings(ctx) }) { Text("Activar envío directo (opcional)") }
                 }
                 if (several) {
                     Text("Envíalo a todos de una vez (los marcas en WhatsApp) o grupo por grupo; el mensaje va ya escrito:", style = MaterialTheme.typography.bodySmall)

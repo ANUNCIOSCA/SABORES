@@ -2,6 +2,9 @@
 
 package com.agendawa.app
 
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
@@ -360,3 +363,32 @@ fun rememberSpeechInput(prompt: String, onCancel: () -> Unit = {}, onText: (Stri
  * navegación y el teclado (con safeDrawingPadding), para que Guardar/Cancelar siempre se vean.
  */
 val WideDialogProperties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+
+/**
+ * Margen seguro de los diálogos anchos: lo que reporta la ventana del diálogo y, por si en algún
+ * teléfono no lo reporta (pasa con la barra de 3 botones), la barra de navegación real de la pantalla principal.
+ */
+@androidx.compose.runtime.Composable
+fun androidx.compose.ui.Modifier.dialogSafePadding(): androidx.compose.ui.Modifier {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val bars = androidx.compose.runtime.remember(context) {
+        var c: android.content.Context? = context
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+        val decor = (c as? android.app.Activity)?.window?.decorView
+        decor?.let {
+            androidx.core.view.ViewCompat.getRootWindowInsets(it)?.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout(),
+            )
+        }
+    }
+    val fallback = with(density) {
+        androidx.compose.foundation.layout.WindowInsets(
+            top = (bars?.top ?: 0).toDp(), bottom = (bars?.bottom ?: 0).toDp(),
+            left = (bars?.left ?: 0).toDp(), right = (bars?.right ?: 0).toDp(),
+        )
+    }
+    return this.windowInsetsPadding(
+        androidx.compose.foundation.layout.WindowInsets.safeDrawing.union(fallback),
+    )
+}

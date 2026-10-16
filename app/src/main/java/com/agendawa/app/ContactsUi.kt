@@ -1,6 +1,5 @@
 package com.agendawa.app
 
-import androidx.compose.foundation.layout.safeDrawingPadding
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -185,7 +184,7 @@ private fun ContactBookDialog(onDismiss: () -> Unit, onPick: (SelectedPhoneConta
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = WideDialogProperties,
-        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(12.dp),
+        modifier = Modifier.fillMaxWidth().dialogSafePadding().padding(12.dp),
         title = { Text("Elegir contacto") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

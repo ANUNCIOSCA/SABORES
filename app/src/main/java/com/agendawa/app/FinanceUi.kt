@@ -2,7 +2,6 @@
 
 package com.agendawa.app
 
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -777,7 +776,7 @@ private fun ClientDetailDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = WideDialogProperties,
-        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
+        modifier = Modifier.fillMaxWidth().dialogSafePadding().padding(16.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(client.name, modifier = Modifier.weight(1f))
@@ -838,7 +837,7 @@ private fun FinanceEntryEditorDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = WideDialogProperties,
-        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
+        modifier = Modifier.fillMaxWidth().dialogSafePadding().padding(16.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

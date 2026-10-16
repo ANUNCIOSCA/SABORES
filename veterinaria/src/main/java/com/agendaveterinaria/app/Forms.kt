@@ -2,7 +2,6 @@
 
 package com.agendaveterinaria.app
 
-import androidx.compose.foundation.layout.safeDrawingPadding
 import android.app.Activity
 import android.content.Intent
 import android.provider.ContactsContract
@@ -58,7 +57,7 @@ fun FormDialog(title: String, onDismiss: () -> Unit, onSave: () -> Unit, saveLab
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = WideDialogProperties,
-        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(12.dp),
+        modifier = Modifier.fillMaxWidth().dialogSafePadding().padding(12.dp),
         title = { Text(title) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } },
         confirmButton = { Button(onClick = onSave) { Text(saveLabel) } },

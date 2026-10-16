@@ -112,6 +112,9 @@
         details.fold[open] { padding-bottom: 12px; }
         details.fold > summary { margin: 0 -10px; }
         details.fold .ed { box-sizing: border-box; max-width: 100%; }
+        .own-in { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 2px solid #d6eaea; border-radius: 10px; font-size: 15px; font-family: inherit; margin-top: 6px; }
+        .own-in:focus { outline: none; border-color: #1a8b8b; }
+        .own-check { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; color: #335; }
         details.fold .fo { padding: 3px 6px; }
         .sec-note { font-weight: 600; font-size: 12px; color: #6a8a8a; }
         .more-acts { display: none; }
@@ -179,6 +182,15 @@
             <div class="chips" id="tracked"></div>
             <div class="hint" style="margin-top:6px">Busca algo y toca <b>"+ Rastrear este tema"</b>: al abrir el buscador verás cuántas noticias nuevas hay de cada tema.</div>
             <button class="btn btn-light btn-small" id="trackBtn">+ Rastrear este tema</button>
+            </details>
+
+            <details class="fold" id="ownFold">
+            <summary>✍️ Redactar desde mi título</summary>
+            <div class="hint" style="margin-top:8px">Escribe tu título y por dónde quieres que arranque la nota. Te armo la placa (4 ángulos), el copy y la nota web desde ahí.</div>
+            <input type="text" class="own-in" id="ownTitle" maxlength="140" placeholder="Tu título (ej. Calabozo cumple 20 días sin agua)">
+            <textarea class="own-in" id="ownStart" rows="4" maxlength="1200" placeholder="Punto de inicio: el dato, testimonio, lugar, fecha o fuente con que arranca (ej. Vecinos del sector Los Cerritos denunciaron hoy que la última vez que llegó el agua fue el 25 de septiembre...)"></textarea>
+            <label class="own-check"><input type="checkbox" id="ownSearch" checked> Buscar contexto en los medios (últimos 7 días)</label>
+            <div class="actions"><button class="btn btn-red" id="ownBtn" style="flex:1">Redactar desde mi título</button></div>
             </details>
         </div>
 
@@ -824,6 +836,16 @@ var R24_GUIDE = [
     'listas de tres forzadas ni moralejas. Frases cortas, vivas, con ritmo irregular.'
 ].join('\n');
 
+// Lo que aporta el editor cuando redacta desde su propio título
+function editorBlock(g) {
+    if (!g.own) return '';
+    return [
+        'TÍTULO PROPUESTO POR EL EDITOR (es el eje de todo: puedes pulirlo para la placa, pero no cambies el hecho): "' + g.title + '"',
+        g.start ? 'PUNTO DE INICIO (la placa, el copy y la nota arrancan desde aquí; es información que aporta Repórtalo 24, atribúyela a "vecinos", "denuncias recibidas por Repórtalo 24" o a quien se nombre): "' + g.start + '"' : '',
+        g.items.length ? '' : 'No hay cobertura de otros medios: trabaja SOLO con lo que aportó el editor. No inventes cifras, nombres ni fechas; lo que falte va en "verificar".'
+    ].filter(Boolean).join('\n') + '\n';
+}
+
 function buildPrompt(g, deep, articles) {
     var lines = g.items.map(function (i) { return '- [' + i.source + ', publicado ' + timeAgo(i.date) + '] ' + i.title; });
     var rel = (deep && g.related ? g.related : []).map(function (i) { return '- [' + i.source + ', ' + timeAgo(i.date) + '] ' + i.title; });
@@ -836,11 +858,11 @@ function buildPrompt(g, deep, articles) {
         '',
         'Hoy es ' + new Date().toLocaleString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + '.',
         '',
-        'TITULARES DE LOS MEDIOS SOBRE ESTA HISTORIA:',
-        lines.join('\n'),
+        editorBlock(g),
+        lines.length ? 'TITULARES DE LOS MEDIOS SOBRE ESTA HISTORIA:\n' + lines.join('\n') : '',
         rel.length ? '\nCOBERTURA RELACIONADA (7 días, antecedentes y seguimiento):\n' + rel.slice(0, 25).join('\n') : '',
         full.length ? '\nTEXTO COMPLETO DE LAS NOTAS (fuente principal: de aquí salen cifras, nombres, lugares y declaraciones):\n' + full.join('\n\n')
-            : '\n(No hay texto completo: trabaja SOLO con los titulares y sé prudente con los datos.)',
+            : g.own ? '' : '\n(No hay texto completo: trabaja SOLO con los titulares y sé prudente con los datos.)',
         '',
         'Entrega CUATRO versiones de la placa, nunca neutrales:',
         '1. "amarillista": miedo / riesgo (terror, riesgo de muerte, trampa mortal).',
@@ -938,15 +960,16 @@ async function aiWrite(card, g, deep) {
         var r, readInfo;
         if (aiProviders().length) {
             box.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> Redactando 4 versiones al estilo R24' +
-                (articles.length ? ' con ' + articles.length + (articles.length === 1 ? ' nota completa' : ' notas completas') : ' (solo con titulares)') + '...';
+                (articles.length ? ' con ' + articles.length + (articles.length === 1 ? ' nota completa' : ' notas completas') : g.own ? ' desde tu título' : ' (solo con titulares)') + '...';
             r = await aiCall(buildPrompt(g, deep, articles));
             readInfo = articles.length
                 ? 'Leí completas: ' + articles.map(function (a) { return a.item.source; }).join(', ')
+                : g.own ? 'Redacté desde tu título' + (g.start ? ' y tu punto de inicio' : '') + '. Revisa los datos antes de publicar.'
                 : 'No pude abrir las notas completas: redacté con los titulares. Revisa los datos antes de publicar.';
         } else {
             // Sin clave de IA: se arma la placa con reglas, igual que antes, y se puede editar
             r = localDraft(g, articles);
-            readInfo = 'Armado sin IA a partir del titular' + (articles.length ? ' y la nota de ' + articles[0].item.source : '') +
+            readInfo = 'Armado sin IA a partir ' + (g.own ? 'de tu título' : 'del titular') + (articles.length ? ' y la nota de ' + articles[0].item.source : '') +
                 '. Ajusta el texto a tu gusto. Con una clave de Gemini o Groq (⚙) te propone 4 ángulos al estilo R24.';
         }
         renderDraft(box, card, g, deep, r, readInfo, articles);
@@ -982,6 +1005,8 @@ function localDraft(g, articles) {
         var withNumber = sentences.find(function (x) { return /\d/.test(x) && x.length > 40; }) || sentences[0] || '';
         sub = withNumber.trim().slice(0, 190);
         if (sub) sub = /seg[uú]n|inform[oó]|denunci/i.test(sub) ? sub : sub.replace(/[.!?]$/, '') + ', según ' + art.item.source + '.';
+    } else if (g.own && g.start) {
+        sub = g.start.replace(/\s+/g, ' ').trim().slice(0, 190);
     } else if (g.items[1]) {
         sub = g.items[1].title + ', según ' + g.items[1].source + '.';
     }
@@ -1390,7 +1415,7 @@ function sourcesBlock(g, articles) {
     var full = (articles || []).map(function (r) {
         return '### ' + r.item.source + '\n' + (r.art.description ? r.art.description + '\n' : '') + r.art.text.slice(0, 3000);
     }).join('\n\n');
-    return 'TITULARES:\n' + lines + (full ? '\n\nTEXTO DE LAS NOTAS (fuente principal):\n' + full : '\n\n(Sin texto completo: usa solo los titulares.)');
+    return editorBlock(g) + (lines ? 'TITULARES:\n' + lines : '') + (full ? '\n\nTEXTO DE LAS NOTAS (fuente principal):\n' + full : '\n\n(Sin texto completo: usa solo los titulares.)');
 }
 
 function placaBlock(val) {
@@ -1402,7 +1427,7 @@ function localCopy(val, g) {
     var t = [val('l1'), val('l2')].filter(Boolean).join(' ');
     var topic = (TOPICS.find(function (x) { return x.q === state.query; }) || { label: state.query }).label;
     return (val('tag') ? val('tag') + ' | ' : '') + t + '\n\n' + plain(val('sub')) +
-        '\n\nFuente: ' + g.items[0].source + '.\n\n¿Qué opinas? Te leemos en los comentarios.\n\n' +
+        '\n\nFuente: ' + (g.items[0] ? g.items[0].source : 'Repórtalo 24') + '.\n\n¿Qué opinas? Te leemos en los comentarios.\n\n' +
         '#Reportalo24 #Venezuela #Noticias #' + norm(topic).replace(/\s+/g, '') + ' #UltimaHora';
 }
 
@@ -1618,6 +1643,49 @@ document.getElementById('savedBtn').onclick = openSaved;
 document.getElementById('closeSaved').onclick = function () { document.getElementById('savedModal').classList.remove('show'); };
 document.getElementById('bgClear').onclick = function () { chosenBg = null; showBgBanner(); };
 document.getElementById('searchBtn').onclick = function () { state.query = ''; search(); };
+
+// ---------- redactar desde un título propio ----------
+async function ownWrite() {
+    var titleIn = document.getElementById('ownTitle');
+    var title = titleIn.value.replace(/\s+/g, ' ').trim();
+    var start = document.getElementById('ownStart').value.trim();
+    if (!title) { titleIn.focus(); titleIn.style.borderColor = '#d61f2c'; return; }
+    titleIn.style.borderColor = '';
+    var g = { own: true, title: title, start: start, items: [], latest: new Date(), sourceCount: 0 };
+    var card = document.createElement('div');
+    card.className = 'card open';
+    card.innerHTML = '<div class="meta"><span class="badge hot">TU TÍTULO</span><span data-ctx></span></div>' +
+        '<h3>' + esc(title) + '</h3>' +
+        (start ? '<div class="hint">Arranca con: ' + esc(start.length > 160 ? start.slice(0, 160) + '…' : start) + '</div>' : '') +
+        '<div class="detail"></div>';
+    var results = document.getElementById('results');
+    results.insertBefore(card, results.firstChild);
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (document.getElementById('ownSearch').checked) {
+        var ctx = card.querySelector('[data-ctx]');
+        ctx.innerHTML = '<span class="spinner" style="border-color:#1a8b8b;border-top-color:transparent"></span> buscando contexto...';
+        try {
+            var q = keywords(title).slice(0, 6).join(' ') || title;
+            var groups = groupItems(await fetchNews(q, '7d', state.mode));
+            var kw = keywords(title + ' ' + start);
+            var best = null, bestScore = 0;
+            groups.forEach(function (gr) {
+                var inter = gr.kw.filter(function (w) { return kw.indexOf(w) >= 0; }).length;
+                var sc = inter / Math.max(1, Math.min(kw.length, gr.kw.length));
+                if (sc > bestScore) { bestScore = sc; best = gr; }
+            });
+            if (best && bestScore >= 0.3) {
+                g.items = best.items.slice(0, 8);
+                g.sourceCount = best.sourceCount;
+                ctx.textContent = 'contexto: ' + g.sourceCount + (g.sourceCount === 1 ? ' medio' : ' medios');
+            } else ctx.textContent = 'sin cobertura en medios: solo con tus datos';
+        } catch (e) {
+            ctx.textContent = 'no pude buscar contexto: solo con tus datos';
+        }
+    }
+    aiWrite(card, g, false);
+}
+document.getElementById('ownBtn').onclick = ownWrite;
 document.getElementById('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { state.query = ''; search(); } });
 document.getElementById('backBtn').onclick = function () {
     if (history.length > 1) history.back(); else window.location.href = 'generador.html';

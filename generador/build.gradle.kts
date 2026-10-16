@@ -11,8 +11,8 @@ android {
         applicationId = "com.reportalo24.generador"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.13.1"
+        versionCode = 20
+        versionName = "1.14.0"
     }
 
     signingConfigs {

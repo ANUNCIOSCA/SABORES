@@ -1045,6 +1045,8 @@ private fun GroupPicker(
 ) {
     var adding by remember { mutableStateOf(false) }
     var managing by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    var editGroup by remember { mutableStateOf<WaGroup?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("¿A qué grupo(s)?", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         if (favorites.isEmpty()) {
@@ -1058,12 +1060,13 @@ private fun GroupPicker(
                 val on = selected.any { it.name == g.name }
                 FilterChip(
                     selected = on,
-                    onClick = { if (managing) onRemove(g) else onToggle(g) },
-                    label = { Text(g.name) },
+                    onClick = { if (managing) onRemove(g) else if (editing) editGroup = g else onToggle(g) },
+                    label = { Text(g.name + if (WhatsApp.isGroupLink(g.link)) " 🔗" else "") },
                     leadingIcon = {
                         Icon(
                             when {
                                 managing -> Icons.Rounded.Delete
+                                editing -> Icons.Rounded.Edit
                                 on -> Icons.Rounded.CheckCircle
                                 else -> Icons.Rounded.Groups
                             },
@@ -1078,10 +1081,15 @@ private fun GroupPicker(
                 Icon(Icons.Rounded.GroupAdd, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Agregar grupo", maxLines = 1)
             }
             if (favorites.isNotEmpty()) {
-                TextButton(onClick = { managing = !managing }) { Text(if (managing) "Listo" else "Quitar grupos") }
+                TextButton(onClick = { editing = !editing; managing = false }) { Text(if (editing) "Listo" else "Editar") }
+                TextButton(onClick = { managing = !managing; editing = false }) { Text(if (managing) "Listo" else "Quitar") }
             }
         }
         if (managing) Text("Toca un grupo para quitarlo de tus favoritos.", style = MaterialTheme.typography.bodySmall, color = AgendaDanger)
+        if (editing) Text("Toca un grupo para ponerle o cambiarle el enlace. 🔗 = ya tiene enlace (se abre directo).", style = MaterialTheme.typography.bodySmall, color = AgendaBlue)
+        selected.firstOrNull { !WhatsApp.isGroupLink(it.link) }?.let { g ->
+            TextButton(onClick = { editGroup = g }) { Text("🔗 Agregar el enlace de \"${g.name}\" para que se abra directo") }
+        }
         Text(
             when {
                 selected.isEmpty() -> "A la hora se abre WhatsApp con el mensaje listo y eliges el grupo."
@@ -1092,17 +1100,24 @@ private fun GroupPicker(
         )
     }
     if (adding) AddGroupDialog(onDismiss = { adding = false }, onSave = { onAdd(it); adding = false })
+    editGroup?.let { old ->
+        AddGroupDialog(initial = old, onDismiss = { editGroup = null }, onSave = { g ->
+            if (!g.name.equals(old.name, ignoreCase = true)) onRemove(old)
+            onAdd(g); editGroup = null
+        })
+    }
 }
 
 @Composable
-private fun AddGroupDialog(onDismiss: () -> Unit, onSave: (WaGroup) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var link by remember { mutableStateOf("") }
+internal fun AddGroupDialog(onDismiss: () -> Unit, onSave: (WaGroup) -> Unit, initial: WaGroup? = null) {
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    var name by remember { mutableStateOf(initial?.name.orEmpty()) }
+    var link by remember { mutableStateOf(initial?.link.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.GroupAdd, null, tint = AgendaGreen) },
-        title = { Text("Nuevo grupo") },
+        title = { Text(if (initial == null) "Nuevo grupo" else "Editar grupo") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
@@ -1111,10 +1126,15 @@ private fun AddGroupDialog(onDismiss: () -> Unit, onSave: (WaGroup) -> Unit) {
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
-                    value = link, onValueChange = { link = it.trim().take(200); error = null },
-                    label = { Text("Enlace de invitación (opcional)") }, placeholder = { Text("https://chat.whatsapp.com/...") },
+                    value = link, onValueChange = { link = (WhatsApp.extractGroupLink(it) ?: it.trim()).take(200); error = null },
+                    label = { Text("Enlace de invitación") }, placeholder = { Text("https://chat.whatsapp.com/...") },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
+                OutlinedButton(onClick = {
+                    val pasted = clipboard.getText()?.text.orEmpty()
+                    val found = WhatsApp.extractGroupLink(pasted)
+                    if (found != null) { link = found; error = null } else error = "Lo copiado no tiene un enlace de grupo (chat.whatsapp.com/...)."
+                }, modifier = Modifier.fillMaxWidth()) { Text("Pegar enlace copiado") }
                 Text(
                     "Con el enlace, la app abre ese grupo directo. Para copiarlo: en WhatsApp entra al grupo → toca el nombre → " +
                         "\"Invitar al grupo mediante enlace\" → Copiar enlace. (Solo lo ven los administradores, o todos si el grupo lo permite.)\n" +
@@ -1129,7 +1149,7 @@ private fun AddGroupDialog(onDismiss: () -> Unit, onSave: (WaGroup) -> Unit) {
                 when {
                     name.isBlank() -> error = "Ponle un nombre al grupo."
                     link.isNotBlank() && !WhatsApp.isGroupLink(link) -> error = "Ese enlace no es de un grupo (debe ser chat.whatsapp.com/...)."
-                    else -> onSave(WaGroup(name.trim(), link.trim()))
+                    else -> onSave(WaGroup(name.trim(), WhatsApp.extractGroupLink(link) ?: ""))
                 }
             }) { Text("Guardar") }
         },
@@ -1274,7 +1294,17 @@ fun SendWhatsAppDialog(
                     )
                 }
                 if (task.toGroup && task.groups.isNotEmpty()) {
-                    Text(WhatsApp.groupHint(task.groups), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val ctx = LocalContext.current
+                    var refresh by remember { mutableStateOf(0) }
+                    val groups = remember(refresh) { task.groups.map { WhatsApp.withStoredLink(ctx, it) } }
+                    Text(WhatsApp.groupHint(groups), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    groups.singleOrNull()?.takeIf { !WhatsApp.isGroupLink(it.link) }?.let { g ->
+                        var addLink by remember { mutableStateOf(false) }
+                        OutlinedButton(onClick = { addLink = true }, modifier = Modifier.fillMaxWidth()) { Text("🔗 Agregar enlace de \"${g.name}\"") }
+                        if (addLink) AddGroupDialog(initial = g, onDismiss = { addLink = false }, onSave = { ng ->
+                            GroupStore.upsert(ctx, ng); addLink = false; refresh++
+                        })
+                    }
                 }
                 if (several) {
                     Text("Envíalo a todos de una vez (los marcas en WhatsApp) o grupo por grupo; el mensaje va ya escrito:", style = MaterialTheme.typography.bodySmall)

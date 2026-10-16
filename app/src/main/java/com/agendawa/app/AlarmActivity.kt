@@ -198,7 +198,7 @@ private fun AlarmScreen(
             Column(Modifier.fillMaxWidth().padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (task.isWhatsApp && task.toGroup && task.groups.isNotEmpty()) {
                     Text(
-                        WhatsApp.groupHint(task.groups),
+                        WhatsApp.groupHint(task.groups.map { WhatsApp.withStoredLink(LocalContext.current, it) }),
                         color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
                     )
                 }

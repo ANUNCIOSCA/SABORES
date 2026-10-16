@@ -73,7 +73,19 @@ object WhatsApp {
         return runCatching { context.startActivity(intent(phone, text)); true }.getOrDefault(false)
     }
 
-    fun isGroupLink(link: String) = link.contains("chat.whatsapp.com/", ignoreCase = true)
+    fun isGroupLink(link: String) = extractGroupLink(link) != null
+
+    /** Saca el enlace aunque venga con texto ("Únete a mi grupo: https://chat.whatsapp.com/ABC…"). */
+    fun extractGroupLink(text: String): String? =
+        Regex("""(?:https?://)?chat\.whatsapp\.com/(?:invite/)?[A-Za-z0-9_-]{10,}""", RegexOption.IGNORE_CASE).find(text)?.value
+            ?.let { if (it.startsWith("http", ignoreCase = true)) it else "https://$it" }
+
+    /** El grupo con su enlace más reciente (si se agregó después de crear el aviso). */
+    fun withStoredLink(context: Context, group: WaGroup): WaGroup {
+        if (isGroupLink(group.link)) return group
+        val stored = GroupStore.load(context).firstOrNull { it.name.equals(group.name, ignoreCase = true) }
+        return if (stored != null && isGroupLink(stored.link)) group.copy(link = stored.link) else group
+    }
 
     /**
      * Abre WhatsApp con el mensaje ya armado y la lista de chats: tocas el grupo (o varios) y enviar.
@@ -118,7 +130,7 @@ object WhatsApp {
                 context.getSystemService(android.content.ClipboardManager::class.java)
                     .setPrimaryClip(android.content.ClipData.newPlainText("Mensaje para ${group.name}", text))
             }
-            val uri = Uri.parse(group.link.trim())
+            val uri = Uri.parse(extractGroupLink(group.link)!!)
             for (pkg in PACKAGES + listOf<String?>(null)) {
                 val ok = runCatching {
                     context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { if (pkg != null) setPackage(pkg) }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -140,7 +152,7 @@ object WhatsApp {
         val text = task.message.ifBlank { task.title }
         if (!task.toGroup && normalize(task.phone).isNotEmpty()) return open(context, task.phone, text)
         if (!task.toGroup) return shareText(context, text)
-        val single = task.groups.singleOrNull()
+        val single = task.groups.singleOrNull()?.let { withStoredLink(context, it) }
         return if (single != null) openGroup(context, single, text) else shareText(context, text)
     }
 }

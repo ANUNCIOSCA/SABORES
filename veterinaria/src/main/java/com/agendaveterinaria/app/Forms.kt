@@ -2,6 +2,7 @@
 
 package com.agendaveterinaria.app
 
+import androidx.compose.foundation.layout.safeDrawingPadding
 import android.app.Activity
 import android.content.Intent
 import android.provider.ContactsContract
@@ -56,8 +57,8 @@ import androidx.compose.ui.window.DialogProperties
 fun FormDialog(title: String, onDismiss: () -> Unit, onSave: () -> Unit, saveLabel: String = "Guardar", content: @Composable () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        properties = WideDialogProperties,
+        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(12.dp),
         title = { Text(title) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } },
         confirmButton = { Button(onClick = onSave) { Text(saveLabel) } },

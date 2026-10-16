@@ -214,6 +214,7 @@ object FinanceStore {
         put("reminderTaskId", e.reminderTaskId ?: JSONObject.NULL)
         put("createdAtMillis", e.createdAtMillis)
         put("updatedAtMillis", e.updatedAtMillis)
+        put("isLoan", e.isLoan)
     }
 
     fun fromJson(o: JSONObject) = FinanceEntry(
@@ -230,6 +231,7 @@ object FinanceStore {
         reminderTaskId = o.optLongOrNull("reminderTaskId"),
         createdAtMillis = o.optLong("createdAtMillis", System.currentTimeMillis()),
         updatedAtMillis = o.optLong("updatedAtMillis", System.currentTimeMillis()),
+        isLoan = o.optBoolean("isLoan", false),
     )
 
     fun load(context: Context): List<FinanceEntry> =

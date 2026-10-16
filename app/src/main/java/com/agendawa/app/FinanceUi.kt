@@ -2,6 +2,7 @@
 
 package com.agendawa.app
 
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.People
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.ReceiptLong
@@ -59,6 +61,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -85,9 +88,25 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-private enum class FinanceHubTab(val label: String) { SUMMARY("Resumen"), CLIENTS("Clientes"), MOVEMENTS("Movimientos") }
+private enum class FinanceHubTab(val label: String) { SUMMARY("Resumen"), PAYABLE("Por pagar"), LOANS("Préstamos"), CLIENTS("Clientes"), MOVEMENTS("Movimientos") }
 
-private data class EntryEditorRequest(val entry: FinanceEntry? = null, val type: FinanceType = FinanceType.RECEIVABLE, val clientId: Long? = null)
+const val FINANCE_TAB_PAYABLE = 1
+const val FINANCE_TAB_LOANS = 2
+
+private data class EntryEditorRequest(
+    val entry: FinanceEntry? = null,
+    val type: FinanceType = FinanceType.RECEIVABLE,
+    val clientId: Long? = null,
+    val isLoan: Boolean = false,
+)
+
+/** Etiqueta corta del tipo de movimiento. */
+private fun entryKindLabel(e: FinanceEntry) = when {
+    e.isLoan && e.type == FinanceType.RECEIVABLE -> "Presté · me deben"
+    e.isLoan -> "Me prestaron · debo"
+    e.type == FinanceType.RECEIVABLE -> "Por cobrar"
+    else -> "Por pagar"
+}
 
 private fun currencyLabel(code: String) = when (code) {
     "VES" -> "Bs"
@@ -102,6 +121,7 @@ private fun fmoney(amount: Double, currency: String) = money(amount, currencyLab
 @Composable
 fun FinanceHubScreen(
     state: AppState,
+    startTab: Int = 0,
     onBack: () -> Unit,
     onOpenDrawer: () -> Unit,
     showMessage: (String) -> Unit,
@@ -109,7 +129,8 @@ fun FinanceHubScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var tab by remember { mutableStateOf(FinanceHubTab.SUMMARY) }
+    var tab by remember(startTab) { mutableStateOf(FinanceHubTab.entries.getOrElse(startTab) { FinanceHubTab.SUMMARY }) }
+    var payEntry by remember { mutableStateOf<FinanceEntry?>(null) }
     var clientEditor by remember { mutableStateOf<Client?>(null) }
     var showClientEditor by remember { mutableStateOf(false) }
     var entryEditor by remember { mutableStateOf<EntryEditorRequest?>(null) }
@@ -140,7 +161,11 @@ fun FinanceHubScreen(
 
     val remindByWhatsApp: (FinanceEntry) -> Unit = { entry ->
         val client = state.clients.firstOrNull { it.id == entry.clientId }
-        val text = if (entry.type == FinanceType.RECEIVABLE)
+        val text = if (entry.isLoan && entry.type == FinanceType.RECEIVABLE)
+            "Hola ${entry.counterparty}, te escribo para recordarte el préstamo de \"${entry.concept}\". Saldo pendiente: ${fmoney(entry.balance, entry.currency)}. ¡Gracias!"
+        else if (entry.isLoan)
+            "Hola ${entry.counterparty}, te escribo por el préstamo que me hiciste (\"${entry.concept}\"). Me queda pendiente ${fmoney(entry.balance, entry.currency)}."
+        else if (entry.type == FinanceType.RECEIVABLE)
             "Hola ${entry.counterparty}, te escribo para recordarte el pago pendiente de \"${entry.concept}\" por ${fmoney(entry.balance, entry.currency)}. ¡Gracias!"
         else
             "Hola ${entry.counterparty}, te escribo por el pago de \"${entry.concept}\" (${fmoney(entry.balance, entry.currency)})."
@@ -178,7 +203,32 @@ fun FinanceHubScreen(
             )
         },
         floatingActionButton = {
-            if (tab == FinanceHubTab.CLIENTS) {
+            if (tab == FinanceHubTab.PAYABLE) {
+                ExtendedFloatingActionButton(
+                    onClick = { entryEditor = EntryEditorRequest(type = FinanceType.PAYABLE) },
+                    icon = { Icon(Icons.Rounded.Add, null) },
+                    text = { Text("Cuenta por pagar") },
+                    containerColor = AgendaDanger,
+                    contentColor = Color.White,
+                )
+            } else if (tab == FinanceHubTab.LOANS) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ExtendedFloatingActionButton(
+                        onClick = { entryEditor = EntryEditorRequest(type = FinanceType.PAYABLE, isLoan = true) },
+                        icon = { Icon(Icons.Rounded.Add, null) },
+                        text = { Text("Me prestaron") },
+                        containerColor = Color(0xFFFFE4E4),
+                        contentColor = AgendaDanger,
+                    )
+                    ExtendedFloatingActionButton(
+                        onClick = { entryEditor = EntryEditorRequest(type = FinanceType.RECEIVABLE, isLoan = true) },
+                        icon = { Icon(Icons.Rounded.Add, null) },
+                        text = { Text("Presté") },
+                        containerColor = AgendaGreen,
+                        contentColor = Color.White,
+                    )
+                }
+            } else if (tab == FinanceHubTab.CLIENTS) {
                 ExtendedFloatingActionButton(
                     onClick = { clientEditor = null; showClientEditor = true },
                     icon = { Icon(Icons.Rounded.Add, null) },
@@ -205,7 +255,7 @@ fun FinanceHubScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            TabRow(selectedTabIndex = tab.ordinal, containerColor = MaterialTheme.colorScheme.background) {
+            ScrollableTabRow(selectedTabIndex = tab.ordinal, containerColor = MaterialTheme.colorScheme.background, edgePadding = 8.dp) {
                 FinanceHubTab.entries.forEach { t ->
                     Tab(selected = tab == t, onClick = { tab = t }, text = { Text(t.label) })
                 }
@@ -214,6 +264,20 @@ fun FinanceHubScreen(
                 FinanceHubTab.SUMMARY -> FinanceSummary(state, onOpenEntry = { entryEditor = EntryEditorRequest(entry = it) }, onMarkPaid = markPaid, onImport = {
                     importLauncher.launch(arrayOf("*/*"))
                 })
+                FinanceHubTab.PAYABLE -> PayablesPanel(
+                    state,
+                    onOpen = { entryEditor = EntryEditorRequest(entry = it) },
+                    onPay = { payEntry = it },
+                    onMarkPaid = markPaid,
+                    onWhatsApp = remindByWhatsApp,
+                )
+                FinanceHubTab.LOANS -> LoansPanel(
+                    state,
+                    onOpen = { entryEditor = EntryEditorRequest(entry = it) },
+                    onPay = { payEntry = it },
+                    onMarkPaid = markPaid,
+                    onWhatsApp = remindByWhatsApp,
+                )
                 FinanceHubTab.CLIENTS -> ClientsPanel(state, onOpen = { clientDetail = it })
                 FinanceHubTab.MOVEMENTS -> MovementsPanel(
                     state,
@@ -265,6 +329,21 @@ fun FinanceHubScreen(
                 showMessage(if (withReminder && !entry.isPaid) "Movimiento y recordatorio guardados" else "Movimiento guardado")
             },
             onDelete = { confirmDeleteEntry = it; entryEditor = null },
+        )
+    }
+
+    payEntry?.let { e ->
+        PartialPaymentDialog(
+            entry = e,
+            onDismiss = { payEntry = null },
+            onSave = { amount ->
+                val saved = state.saveFinanceEntry(
+                    e.copy(paidAmount = (e.paidAmount + amount).coerceAtMost(e.totalAmount)),
+                    withReminder = e.reminderTaskId != null,
+                )
+                payEntry = null
+                showMessage(if (saved.isPaid) "¡Saldado! Ya no queda deuda." else "Abono guardado. Queda ${fmoney(saved.balance, saved.currency)}")
+            },
         )
     }
 
@@ -383,6 +462,7 @@ private fun EntryCard(
     onMarkPaid: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     onWhatsApp: (() -> Unit)? = null,
+    onPay: (() -> Unit)? = null,
 ) {
     val color = if (e.type == FinanceType.RECEIVABLE) AgendaGreen else AgendaDanger
     val overdue = e.isOverdue()
@@ -393,7 +473,7 @@ private fun EntryCard(
     ) {
         Column(Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Pill(if (e.type == FinanceType.RECEIVABLE) "Por cobrar" else "Por pagar", color)
+                Pill(entryKindLabel(e), color)
                 Spacer(Modifier.width(6.dp))
                 when {
                     e.isPaid -> Pill("Pagado", AgendaBlue)
@@ -402,6 +482,7 @@ private fun EntryCard(
                 }
                 Spacer(Modifier.weight(1f))
                 if (onWhatsApp != null && !e.isPaid) IconButton(onClick = onWhatsApp) { Icon(Icons.AutoMirrored.Rounded.Chat, "WhatsApp", tint = AgendaGreen) }
+                if (onPay != null && !e.isPaid) IconButton(onClick = onPay) { Icon(Icons.Rounded.Payments, "Abonar", tint = AgendaAmber) }
                 if (onMarkPaid != null && !e.isPaid) IconButton(onClick = onMarkPaid) { Icon(Icons.Rounded.CheckCircle, "Marcar pagado", tint = AgendaBlue) }
                 if (onDelete != null) IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, "Eliminar", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
@@ -426,6 +507,137 @@ private fun EntryCard(
             }
         }
     }
+}
+
+@Composable
+private fun PayablesPanel(
+    state: AppState,
+    onOpen: (FinanceEntry) -> Unit,
+    onPay: (FinanceEntry) -> Unit,
+    onMarkPaid: (FinanceEntry) -> Unit,
+    onWhatsApp: (FinanceEntry) -> Unit,
+) {
+    var showPaid by remember { mutableStateOf(false) }
+    val all = state.finance.filter { it.type == FinanceType.PAYABLE && !it.isLoan }
+    val pending = all.filter { !it.isPaid }.sortedBy { it.dueDateMillis }
+    val list = if (showPaid) all.filter { it.isPaid }.sortedByDescending { it.updatedAtMillis } else pending
+    val currencies = pending.map { it.currency }.distinct().ifEmpty { listOf("USD") }
+    LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 110.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Text("Lo que tú debes pagar: servicios, proveedores, alquiler, cuotas... Te aviso en la fecha de pago.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        item {
+            val now = System.currentTimeMillis()
+            val week = now + 7L * 24 * 3600 * 1000
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                currencies.take(2).forEach { cur ->
+                    val p = pending.filter { it.currency == cur }
+                    FinanceMetric("Debo ${if (currencies.size > 1) cur else ""}", fmoney(p.sumOf { it.balance }, cur), "${p.size} pendientes", AgendaDanger, Modifier.weight(1f))
+                }
+                val soon = pending.count { it.dueDateMillis in now..week }
+                val overdue = pending.count { it.isOverdue(now) }
+                FinanceMetric(
+                    if (overdue > 0) "Vencidas" else "Esta semana",
+                    (if (overdue > 0) overdue else soon).toString(),
+                    if (overdue > 0) "¡págalas ya!" else "por vencer",
+                    if (overdue > 0) AgendaDanger else AgendaAmber,
+                    Modifier.weight(1f),
+                )
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = !showPaid, onClick = { showPaid = false }, label = { Text("Pendientes") })
+                FilterChip(selected = showPaid, onClick = { showPaid = true }, label = { Text("Pagadas") })
+            }
+        }
+        if (list.isEmpty()) item {
+            EmptyState(Icons.Rounded.ReceiptLong, if (showPaid) "Nada pagado todavía" else "No tienes cuentas por pagar", "Usa + Cuenta por pagar para registrar una.")
+        }
+        items(list, key = { it.id }) { e ->
+            EntryCard(e, onClick = { onOpen(e) }, onMarkPaid = { onMarkPaid(e) }, onWhatsApp = { onWhatsApp(e) }, onPay = { onPay(e) })
+        }
+    }
+}
+
+@Composable
+private fun LoansPanel(
+    state: AppState,
+    onOpen: (FinanceEntry) -> Unit,
+    onPay: (FinanceEntry) -> Unit,
+    onMarkPaid: (FinanceEntry) -> Unit,
+    onWhatsApp: (FinanceEntry) -> Unit,
+) {
+    var showPaid by remember { mutableStateOf(false) }
+    val loans = state.finance.filter { it.isLoan }
+    val pending = loans.filter { !it.isPaid }
+    val list = if (showPaid) loans.filter { it.isPaid }.sortedByDescending { it.updatedAtMillis } else pending.sortedBy { it.dueDateMillis }
+    val currencies = pending.map { it.currency }.distinct().ifEmpty { listOf("USD") }
+    LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 110.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Text("Anota el dinero que prestas y el que te prestan. Registra cada abono y te recuerdo la fecha de pago.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        currencies.forEach { cur ->
+            item(key = "loan_$cur") {
+                val lent = pending.filter { it.currency == cur && it.type == FinanceType.RECEIVABLE }
+                val owed = pending.filter { it.currency == cur && it.type == FinanceType.PAYABLE }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FinanceMetric("Me deben ${if (currencies.size > 1) cur else ""}", fmoney(lent.sumOf { it.balance }, cur), "${lent.size} préstamos", AgendaGreen, Modifier.weight(1f))
+                    FinanceMetric("Yo debo ${if (currencies.size > 1) cur else ""}", fmoney(owed.sumOf { it.balance }, cur), "${owed.size} préstamos", AgendaDanger, Modifier.weight(1f))
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = !showPaid, onClick = { showPaid = false }, label = { Text("Activos") })
+                FilterChip(selected = showPaid, onClick = { showPaid = true }, label = { Text("Saldados") })
+            }
+        }
+        if (list.isEmpty()) item {
+            EmptyState(Icons.Rounded.Payments, if (showPaid) "Ningún préstamo saldado" else "Sin préstamos", "Usa + Presté o + Me prestaron para anotar uno.")
+        }
+        items(list, key = { it.id }) { e ->
+            EntryCard(e, onClick = { onOpen(e) }, onMarkPaid = { onMarkPaid(e) }, onWhatsApp = { onWhatsApp(e) }, onPay = { onPay(e) })
+        }
+    }
+}
+
+/** Registra un abono parcial a una cuenta o préstamo. */
+@Composable
+private fun PartialPaymentDialog(entry: FinanceEntry, onDismiss: () -> Unit, onSave: (Double) -> Unit) {
+    var amount by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Registrar abono") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${entry.concept} · ${entry.counterparty}", fontWeight = FontWeight.SemiBold)
+                Text("Saldo actual: ${fmoney(entry.balance, entry.currency)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    amount, { amount = it; error = null }, label = { Text("Monto del abono") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+                    isError = error != null, supportingText = { error?.let { Text(it) } },
+                )
+                TextButton(onClick = { amount = String.format(java.util.Locale.US, "%.2f", entry.balance) }) { Text("Pagar todo el saldo") }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val v = ExpenseVoiceParser.parseAmount(amount) ?: 0.0
+                if (v <= 0.0) error = "Escribe un monto mayor a cero." else onSave(v)
+            }) { Text("Guardar abono") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 @Composable
@@ -473,7 +685,7 @@ private fun ClientsPanel(state: AppState, onOpen: (Client) -> Unit) {
     }
 }
 
-private enum class MovementFilter(val label: String) { ALL("Todos"), RECEIVABLE("Por cobrar"), PAYABLE("Por pagar"), OVERDUE("Vencidos"), PAID("Pagados") }
+private enum class MovementFilter(val label: String) { ALL("Todos"), RECEIVABLE("Por cobrar"), PAYABLE("Por pagar"), LOANS("Préstamos"), OVERDUE("Vencidos"), PAID("Pagados") }
 
 @Composable
 private fun MovementsPanel(
@@ -489,6 +701,7 @@ private fun MovementsPanel(
             MovementFilter.ALL -> true
             MovementFilter.RECEIVABLE -> it.type == FinanceType.RECEIVABLE && !it.isPaid
             MovementFilter.PAYABLE -> it.type == FinanceType.PAYABLE && !it.isPaid
+            MovementFilter.LOANS -> it.isLoan
             MovementFilter.OVERDUE -> it.isOverdue()
             MovementFilter.PAID -> it.isPaid
         }
@@ -563,8 +776,8 @@ private fun ClientDetailDialog(
     val entries = state.finance.filter { it.clientId == client.id }
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        properties = WideDialogProperties,
+        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(client.name, modifier = Modifier.weight(1f))
@@ -609,6 +822,7 @@ private fun FinanceEntryEditorDialog(
         Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 7); set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }.timeInMillis
     }
     var type by remember { mutableStateOf(existing?.type ?: request.type) }
+    var isLoan by remember { mutableStateOf(existing?.isLoan ?: request.isLoan) }
     var clientId by remember { mutableStateOf(existing?.clientId ?: request.clientId) }
     var counterparty by remember { mutableStateOf(existing?.counterparty ?: state.clients.firstOrNull { it.id == request.clientId }?.name ?: "") }
     var concept by remember { mutableStateOf(existing?.concept ?: "") }
@@ -623,12 +837,19 @@ private fun FinanceEntryEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        properties = WideDialogProperties,
+        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (existing != null) "Editar movimiento" else if (type == FinanceType.RECEIVABLE) "Cuenta por cobrar" else "Cuenta por pagar",
+                    when {
+                        existing != null && isLoan -> "Editar préstamo"
+                        existing != null -> "Editar movimiento"
+                        isLoan && type == FinanceType.RECEIVABLE -> "Préstamo que hice"
+                        isLoan -> "Préstamo que me hicieron"
+                        type == FinanceType.RECEIVABLE -> "Cuenta por cobrar"
+                        else -> "Cuenta por pagar"
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 if (existing != null) IconButton(onClick = { onDelete(existing) }) { Icon(Icons.Rounded.Delete, "Eliminar") }
@@ -640,17 +861,30 @@ private fun FinanceEntryEditorDialog(
                     SegmentedButton(
                         selected = type == FinanceType.RECEIVABLE, onClick = { type = FinanceType.RECEIVABLE },
                         shape = SegmentedButtonDefaults.itemShape(0, 2),
-                    ) { Text("Me pagan") }
+                    ) { Text(if (isLoan) "Yo presté" else "Me pagan") }
                     SegmentedButton(
                         selected = type == FinanceType.PAYABLE, onClick = { type = FinanceType.PAYABLE },
                         shape = SegmentedButtonDefaults.itemShape(1, 2),
-                    ) { Text("Yo pago") }
+                    ) { Text(if (isLoan) "Me prestaron" else "Yo pago") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { isLoan = !isLoan }) {
+                    Checkbox(checked = isLoan, onCheckedChange = { isLoan = it })
+                    Text("Es un préstamo")
                 }
                 Box {
                     OutlinedTextField(
                         value = counterparty,
                         onValueChange = { counterparty = it; clientId = state.clients.firstOrNull { c -> c.name.equals(it.trim(), true) }?.id },
-                        label = { Text(if (type == FinanceType.RECEIVABLE) "Cliente / persona" else "Proveedor / a quién pagas") },
+                        label = {
+                            Text(
+                                when {
+                                    isLoan && type == FinanceType.RECEIVABLE -> "¿A quién le prestaste?"
+                                    isLoan -> "¿Quién te prestó?"
+                                    type == FinanceType.RECEIVABLE -> "Cliente / persona"
+                                    else -> "Proveedor / a quién pagas"
+                                },
+                            )
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
@@ -664,10 +898,10 @@ private fun FinanceEntryEditorDialog(
                         }
                     }
                 }
-                OutlinedTextField(concept, { concept = it }, label = { Text("Concepto") }, placeholder = { Text("Ej. Diseño, hosting, suscripción...") },
+                OutlinedTextField(concept, { concept = it }, label = { Text("Concepto") }, placeholder = { Text(if (isLoan) "Ej. Préstamo para la moto, adelanto..." else "Ej. Diseño, hosting, suscripción...") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(total, { total = it }, label = { Text("Monto total") }, singleLine = true,
+                    OutlinedTextField(total, { total = it }, label = { Text(if (isLoan) "Monto prestado" else "Monto total") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
                     OutlinedTextField(paid, { paid = it }, label = { Text("Pagado / abonado") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f))
@@ -679,7 +913,7 @@ private fun FinanceEntryEditorDialog(
                 }
                 OutlinedButton(onClick = { pickDate(context, due) { d -> pickTime(context, d) { due = it } } }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.CalendarMonth, null); Spacer(Modifier.width(6.dp))
-                    Text("Fecha de pago: ${formatDate(due, "dd MMM yyyy, h:mm a")}")
+                    Text("${if (isLoan) "Devolver el" else "Fecha de pago"}: ${formatDate(due, "dd MMM yyyy, h:mm a")}")
                 }
                 OutlinedTextField(notes, { notes = it }, label = { Text("Notas") }, modifier = Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { withReminder = !withReminder }) {
@@ -694,12 +928,12 @@ private fun FinanceEntryEditorDialog(
                 val totalValue = ExpenseVoiceParser.parseAmount(total) ?: 0.0
                 val paidValue = ExpenseVoiceParser.parseAmount(paid) ?: 0.0
                 when {
-                    counterparty.isBlank() -> error = "Escribe el nombre del cliente."
-                    concept.isBlank() -> error = "Escribe el concepto."
+                    counterparty.isBlank() -> error = if (isLoan) "Escribe el nombre de la persona." else "Escribe el nombre del cliente."
+                    concept.isBlank() && !isLoan -> error = "Escribe el concepto."
                     totalValue <= 0.0 -> error = "El monto total debe ser mayor a cero."
                     else -> {
                         var cid = clientId
-                        if (cid == null && type == FinanceType.RECEIVABLE) {
+                        if (cid == null && type == FinanceType.RECEIVABLE && !isLoan) {
                             cid = state.saveClient(Client(id = 0L, name = counterparty.trim())).id
                         }
                         onSave(
@@ -707,7 +941,8 @@ private fun FinanceEntryEditorDialog(
                                 type = type,
                                 clientId = cid,
                                 counterparty = counterparty.trim(),
-                                concept = concept.trim(),
+                                concept = concept.trim().ifBlank { "Préstamo" },
+                                isLoan = isLoan,
                                 totalAmount = totalValue,
                                 paidAmount = paidValue.coerceIn(0.0, totalValue),
                                 currency = currency,

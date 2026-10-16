@@ -526,7 +526,7 @@ fun IdeaLabDialog(
     val ideaTitle = result.lineSequence().firstOrNull { it.startsWith("# ") }?.removePrefix("# ")?.trim()
         ?: description.take(60).ifBlank { "Idea" }
 
-    Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = { goBack() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         BackHandler { goBack() }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(

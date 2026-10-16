@@ -354,3 +354,9 @@ fun rememberSpeechInput(prompt: String, onCancel: () -> Unit = {}, onText: (Stri
     }
     return remember(prompt) { { attempt[0] = 0; launch(0) } }
 }
+
+/**
+ * Diálogos anchos: la ventana ocupa toda la pantalla y el contenido respeta la barra de
+ * navegación y el teclado (con safeDrawingPadding), para que Guardar/Cancelar siempre se vean.
+ */
+val WideDialogProperties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)

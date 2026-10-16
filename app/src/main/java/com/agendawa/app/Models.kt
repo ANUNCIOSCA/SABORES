@@ -93,6 +93,8 @@ data class FinanceEntry(
     val reminderTaskId: Long? = null,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = System.currentTimeMillis(),
+    /** Préstamo: RECEIVABLE = yo presté (me deben), PAYABLE = me prestaron (yo debo). */
+    val isLoan: Boolean = false,
 ) {
     val balance: Double get() = (totalAmount - paidAmount).coerceAtLeast(0.0)
     val isPaid: Boolean get() = balance <= 0.004

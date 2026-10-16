@@ -217,6 +217,7 @@ fun AgendaWaApp(
     var lastVoiceTaskId by remember { mutableStateOf(0L) }
 
     var section by remember { mutableStateOf(AppSection.AGENDA) }
+    var financeTab by remember { mutableStateOf(0) }
     var tab by remember { mutableIntStateOf(0) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
@@ -541,6 +542,7 @@ fun AgendaWaApp(
     )
 
     val openSectionFromDrawer: (AppSection) -> Unit = { s ->
+        if (s == AppSection.FINANZAS) financeTab = 0
         section = s
         scope.launch { drawerState.close() }
     }
@@ -556,6 +558,7 @@ fun AgendaWaApp(
                     name = state.profileName,
                     current = section,
                     onSection = openSectionFromDrawer,
+                    onFinanceTab = { t -> financeTab = t; section = AppSection.FINANZAS; scope.launch { drawerState.close() } },
                     onBackup = { showBackup = true; scope.launch { drawerState.close() } },
                     onAlarms = { showAlarmSettings = true; scope.launch { drawerState.close() } },
                     onProfile = { showProfile = true; scope.launch { drawerState.close() } },
@@ -574,6 +577,7 @@ fun AgendaWaApp(
                 )
                 AppSection.FINANZAS -> FinanceHubScreen(
                     state = state,
+                    startTab = financeTab,
                     onBack = { section = AppSection.AGENDA },
                     onOpenDrawer = { scope.launch { drawerState.open() } },
                     showMessage = showMessage,
@@ -597,7 +601,11 @@ fun AgendaWaApp(
                                         DropdownMenuItem(text = { Text("Mis Gastos") }, leadingIcon = { Icon(Icons.Rounded.ReceiptLong, null) },
                                             onClick = { showMenu = false; section = AppSection.GASTOS })
                                         DropdownMenuItem(text = { Text("Clientes y Finanzas") }, leadingIcon = { Icon(Icons.Rounded.BusinessCenter, null) },
-                                            onClick = { showMenu = false; section = AppSection.FINANZAS })
+                                            onClick = { showMenu = false; financeTab = 0; section = AppSection.FINANZAS })
+                                        DropdownMenuItem(text = { Text("Cuentas por pagar") }, leadingIcon = { Icon(Icons.Rounded.BusinessCenter, null) },
+                                            onClick = { showMenu = false; financeTab = FINANCE_TAB_PAYABLE; section = AppSection.FINANZAS })
+                                        DropdownMenuItem(text = { Text("Préstamos") }, leadingIcon = { Icon(Icons.Rounded.BusinessCenter, null) },
+                                            onClick = { showMenu = false; financeTab = FINANCE_TAB_LOANS; section = AppSection.FINANZAS })
                                         DropdownMenuItem(text = { Text("Copia de seguridad") }, leadingIcon = { Icon(Icons.Rounded.Backup, null) },
                                             onClick = { showMenu = false; showBackup = true })
                                         DropdownMenuItem(text = { Text("Configurar alarmas") }, leadingIcon = { Icon(Icons.Rounded.Alarm, null) },
@@ -904,6 +912,7 @@ private fun AppDrawer(
     name: String,
     current: AppSection,
     onSection: (AppSection) -> Unit,
+    onFinanceTab: (Int) -> Unit,
     onBackup: () -> Unit,
     onAlarms: () -> Unit,
     onProfile: () -> Unit,
@@ -939,6 +948,16 @@ private fun AppDrawer(
                 label = { Text("Clientes y Finanzas") }, icon = { Icon(Icons.Rounded.BusinessCenter, null) },
                 selected = current == AppSection.FINANZAS, onClick = { onSection(AppSection.FINANZAS) },
                 modifier = Modifier.padding(horizontal = 12.dp),
+            )
+            NavigationDrawerItem(
+                label = { Text("Cuentas por pagar") }, icon = { Icon(Icons.Rounded.ReceiptLong, null) },
+                selected = false, onClick = { onFinanceTab(FINANCE_TAB_PAYABLE) },
+                modifier = Modifier.padding(start = 28.dp, end = 12.dp),
+            )
+            NavigationDrawerItem(
+                label = { Text("Préstamos") }, icon = { Icon(Icons.Rounded.BusinessCenter, null) },
+                selected = false, onClick = { onFinanceTab(FINANCE_TAB_LOANS) },
+                modifier = Modifier.padding(start = 28.dp, end = 12.dp),
             )
             NavigationDrawerItem(
                 label = { Text("Laboratorio de ideas") }, icon = { Icon(Icons.Outlined.Science, null) },

@@ -172,7 +172,12 @@ class AppState(private val context: Context) {
     }
 
     private fun reminderTitle(e: FinanceEntry): String =
-        "${if (e.type == FinanceType.RECEIVABLE) "Cobrar a" else "Pagar a"} ${e.counterparty}: ${e.concept}"
+        when {
+            e.isLoan && e.type == FinanceType.RECEIVABLE -> "Cobrar préstamo a ${e.counterparty}: ${e.concept}"
+            e.isLoan -> "Pagar préstamo a ${e.counterparty}: ${e.concept}"
+            e.type == FinanceType.RECEIVABLE -> "Cobrar a ${e.counterparty}: ${e.concept}"
+            else -> "Pagar a ${e.counterparty}: ${e.concept}"
+        }
 
     private fun reminderMessage(e: FinanceEntry): String =
         "${e.concept} · Saldo pendiente: ${money(e.balance)} ${e.currency}"

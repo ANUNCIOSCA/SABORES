@@ -2,6 +2,7 @@
 
 package com.agendawa.app
 
+import androidx.compose.foundation.layout.safeDrawingPadding
 import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -707,8 +708,8 @@ fun TaskEditorDialog(request: TaskEditorRequest, onDismiss: () -> Unit, onSave: 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        properties = WideDialogProperties,
+        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
         title = {
             Text(
                 when {
@@ -1182,8 +1183,8 @@ fun DraftMessageDialog(task: AgendaTask, onDismiss: () -> Unit, onSave: (String)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        properties = WideDialogProperties,
+        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
         title = { Text(if (person.isNotBlank()) "Mensaje para $person" else "Redactar mensaje") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1255,8 +1256,8 @@ fun SendWhatsAppDialog(
     var opened by remember { mutableStateOf(setOf<String>()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        properties = WideDialogProperties,
+        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
         icon = { Icon(Icons.AutoMirrored.Rounded.Chat, null, tint = AgendaGreen) },
         title = { Text("WhatsApp para $person", textAlign = TextAlign.Center) },
         text = {

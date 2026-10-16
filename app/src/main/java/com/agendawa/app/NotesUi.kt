@@ -2,6 +2,7 @@
 
 package com.agendawa.app
 
+import androidx.compose.foundation.layout.safeDrawingPadding
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -275,8 +276,8 @@ fun SmartNoteEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        properties = WideDialogProperties,
+        modifier = Modifier.fillMaxWidth().safeDrawingPadding().padding(16.dp),
         title = { Text(if (existing == null) "Capturar una idea" else "Editar nota") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {

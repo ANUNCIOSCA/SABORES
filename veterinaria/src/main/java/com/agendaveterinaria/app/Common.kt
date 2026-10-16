@@ -179,3 +179,9 @@ fun LabeledRow(label: String, value: String) {
         Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
 }
+
+/**
+ * Diálogos anchos: la ventana ocupa toda la pantalla y el contenido respeta la barra de
+ * navegación y el teclado (con safeDrawingPadding), para que Guardar/Cancelar siempre se vean.
+ */
+val WideDialogProperties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)

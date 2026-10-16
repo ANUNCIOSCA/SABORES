@@ -1,0 +1,197 @@
+Starting a Gradle Daemon (subsequent builds will be faster)
+> Task :app:buildKotlinToolingMetadata
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:generateReleaseResValues
+> Task :app:checkReleaseAarMetadata
+> Task :app:mapReleaseSourceSetPaths
+> Task :app:generateReleaseResources
+> Task :app:packageReleaseResources
+> Task :app:createReleaseCompatibleScreenManifests
+> Task :app:extractDeepLinksRelease
+> Task :app:mergeReleaseResources
+> Task :app:parseReleaseLocalResources
+> Task :app:processReleaseMainManifest
+> Task :app:processReleaseManifest
+> Task :app:javaPreCompileRelease
+> Task :app:extractProguardFiles
+> Task :app:mergeReleaseJniLibFolders
+> Task :app:mergeReleaseNativeLibs
+> Task :app:checkReleaseDuplicateClasses
+> Task :app:desugarReleaseFileDependencies
+> Task :app:mergeReleaseStartupProfile
+
+> Task :app:stripReleaseDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so.
+
+> Task :app:extractReleaseNativeSymbolTables
+> Task :app:processReleaseManifestForPackage
+> Task :app:mergeReleaseArtProfile
+> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :app:mergeReleaseShaders
+> Task :app:compileReleaseShaders NO-SOURCE
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :app:mergeReleaseAssets
+> Task :app:compressReleaseAssets
+> Task :app:extractReleaseVersionControlInfo
+> Task :app:collectReleaseDependencies
+> Task :app:sdkReleaseDependencyData
+> Task :app:processReleaseResources
+> Task :app:validateSigningRelease
+> Task :app:writeReleaseAppMetadata
+> Task :app:writeReleaseSigningConfigVersions
+> Task :generador:buildKotlinToolingMetadata
+> Task :generador:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :generador:preBuild UP-TO-DATE
+> Task :generador:preReleaseBuild UP-TO-DATE
+> Task :app:optimizeReleaseResources
+> Task :generador:checkReleaseAarMetadata
+> Task :generador:generateReleaseResValues
+> Task :generador:mapReleaseSourceSetPaths
+> Task :generador:generateReleaseResources
+> Task :generador:packageReleaseResources
+> Task :generador:parseReleaseLocalResources
+> Task :generador:createReleaseCompatibleScreenManifests
+> Task :generador:extractDeepLinksRelease
+> Task :generador:mergeReleaseResources
+> Task :generador:processReleaseMainManifest
+> Task :generador:processReleaseManifest
+> Task :generador:processReleaseManifestForPackage
+> Task :generador:javaPreCompileRelease
+> Task :generador:extractProguardFiles
+> Task :generador:mergeReleaseJniLibFolders
+> Task :generador:processReleaseResources
+> Task :app:mergeExtDexRelease
+> Task :generador:mergeReleaseNativeLibs NO-SOURCE
+> Task :generador:stripReleaseDebugSymbols NO-SOURCE
+> Task :generador:extractReleaseNativeSymbolTables NO-SOURCE
+> Task :generador:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :generador:desugarReleaseFileDependencies
+> Task :generador:checkReleaseDuplicateClasses
+> Task :generador:mergeReleaseStartupProfile
+> Task :app:compileReleaseKotlin
+
+> Task :generador:compileReleaseKotlin
+w: file:///home/runner/work/SABORES/SABORES/generador/src/main/java/com/reportalo24/generador/MainActivity.kt:250:47 'constructor(p0: EditedMediaItem, vararg p1: EditedMediaItem): EditedMediaItemSequence' is deprecated. Deprecated in Java.
+
+> Task :generador:mergeExtDexRelease
+> Task :generador:compileReleaseJavaWithJavac NO-SOURCE
+> Task :generador:generateReleaseLintVitalReportModel
+> Task :generador:dexBuilderRelease
+> Task :generador:mergeReleaseArtProfile
+> Task :generador:mergeReleaseGlobalSynthetics
+> Task :generador:mergeReleaseShaders
+> Task :generador:compileReleaseShaders NO-SOURCE
+> Task :generador:generateReleaseAssets UP-TO-DATE
+> Task :generador:mergeReleaseAssets
+> Task :generador:compressReleaseAssets
+> Task :generador:extractReleaseVersionControlInfo
+> Task :generador:mergeDexRelease
+> Task :generador:processReleaseJavaRes
+> Task :generador:compileReleaseArtProfile
+> Task :generador:optimizeReleaseResources
+> Task :generador:collectReleaseDependencies
+> Task :generador:sdkReleaseDependencyData
+> Task :generador:validateSigningRelease
+> Task :generador:writeReleaseAppMetadata
+> Task :generador:writeReleaseSigningConfigVersions
+> Task :veterinaria:buildKotlinToolingMetadata
+> Task :veterinaria:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :veterinaria:preBuild UP-TO-DATE
+> Task :veterinaria:preReleaseBuild UP-TO-DATE
+> Task :veterinaria:checkReleaseAarMetadata
+> Task :veterinaria:generateReleaseResValues
+> Task :veterinaria:mapReleaseSourceSetPaths
+> Task :veterinaria:generateReleaseResources
+> Task :generador:mergeReleaseJavaResource
+> Task :veterinaria:mergeReleaseResources
+> Task :veterinaria:packageReleaseResources
+> Task :veterinaria:parseReleaseLocalResources
+> Task :veterinaria:createReleaseCompatibleScreenManifests
+> Task :veterinaria:extractDeepLinksRelease
+> Task :veterinaria:processReleaseMainManifest
+> Task :veterinaria:processReleaseManifest
+> Task :veterinaria:processReleaseManifestForPackage
+> Task :veterinaria:processReleaseResources
+> Task :generador:packageRelease
+> Task :generador:createReleaseApkListingFileRedirect
+> Task :veterinaria:javaPreCompileRelease
+> Task :veterinaria:extractProguardFiles
+> Task :veterinaria:mergeReleaseJniLibFolders
+> Task :veterinaria:mergeReleaseNativeLibs
+
+> Task :veterinaria:stripReleaseDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so.
+
+> Task :veterinaria:extractReleaseNativeSymbolTables
+> Task :veterinaria:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :veterinaria:checkReleaseDuplicateClasses
+> Task :veterinaria:desugarReleaseFileDependencies
+> Task :veterinaria:mergeReleaseStartupProfile
+> Task :veterinaria:mergeExtDexRelease
+> Task :veterinaria:mergeReleaseArtProfile
+> Task :veterinaria:mergeReleaseShaders
+> Task :veterinaria:compileReleaseShaders NO-SOURCE
+> Task :veterinaria:generateReleaseAssets UP-TO-DATE
+> Task :veterinaria:mergeReleaseAssets
+> Task :veterinaria:compressReleaseAssets
+> Task :veterinaria:extractReleaseVersionControlInfo
+> Task :veterinaria:optimizeReleaseResources
+> Task :veterinaria:collectReleaseDependencies
+> Task :veterinaria:sdkReleaseDependencyData
+> Task :veterinaria:validateSigningRelease
+> Task :veterinaria:writeReleaseAppMetadata
+> Task :veterinaria:writeReleaseSigningConfigVersions
+> Task :generador:lintVitalAnalyzeRelease
+> Task :generador:lintVitalReportRelease
+> Task :generador:lintVitalRelease
+> Task :generador:assembleRelease
+> Task :veterinaria:compileReleaseKotlin
+> Task :veterinaria:compileReleaseJavaWithJavac NO-SOURCE
+> Task :veterinaria:generateReleaseLintVitalReportModel
+
+> Task :app:compileReleaseKotlin
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/AgendaScreens.kt:165:42 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/FinanceUi.kt:435:45 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/FinanceUi.kt:558:38 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/FinanceUi.kt:719:61 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/GastosReports.kt:622:36 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/GastosUi.kt:255:48 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/GastosUi.kt:255:76 'val Icons.Outlined.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/GastosUi.kt:391:36 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/MainActivity.kt:602:124 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/MainActivity.kt:944:77 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/MainActivity.kt:954:84 'val Icons.Rounded.ReceiptLong: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.ReceiptLong.
+w: file:///home/runner/work/SABORES/SABORES/app/src/main/java/com/agendawa/app/NotesUi.kt:82:44 'val Icons.Rounded.StickyNote2: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Rounded.StickyNote2.
+
+> Task :veterinaria:dexBuilderRelease
+> Task :app:compileReleaseJavaWithJavac NO-SOURCE
+> Task :app:generateReleaseLintVitalReportModel
+> Task :app:dexBuilderRelease
+> Task :app:mergeReleaseGlobalSynthetics
+> Task :app:processReleaseJavaRes
+> Task :app:mergeDexRelease
+> Task :app:mergeReleaseJavaResource
+> Task :app:compileReleaseArtProfile
+> Task :veterinaria:mergeDexRelease
+> Task :veterinaria:mergeReleaseGlobalSynthetics
+> Task :veterinaria:compileReleaseArtProfile
+> Task :veterinaria:processReleaseJavaRes
+> Task :veterinaria:mergeReleaseJavaResource
+> Task :app:packageRelease
+> Task :app:createReleaseApkListingFileRedirect
+> Task :veterinaria:lintVitalAnalyzeRelease
+> Task :veterinaria:lintVitalReportRelease
+> Task :veterinaria:lintVitalRelease
+> Task :veterinaria:packageRelease
+> Task :veterinaria:createReleaseApkListingFileRedirect
+> Task :veterinaria:assembleRelease
+> Task :app:lintVitalAnalyzeRelease
+> Task :app:lintVitalReportRelease
+> Task :app:lintVitalRelease
+> Task :app:assembleRelease
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1792185802637.json
+
+BUILD SUCCESSFUL in 2m 41s
+141 actionable tasks: 141 executed
